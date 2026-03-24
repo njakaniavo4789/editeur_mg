@@ -1,0 +1,172 @@
+/* ============================
+   Toolbar
+   ============================ */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  flex-shrink: 0;
+}
+
+.toolbar-title {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #f8fafc;
+  letter-spacing: 0.5px;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toolbar-btn {
+  background: #334155;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.toolbar-btn:hover {
+  background: #4f6080;
+}
+
+/* ============================
+   Editor Core
+   ============================ */
+.editor-core {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.quill-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.quill-container .ql-editor {
+  flex: 1;
+  font-size: 1.05rem;
+  line-height: 1.8;
+  color: #e2e8f0;
+  background: #0f172a;
+  min-height: 300px;
+  padding: 20px 24px;
+}
+
+.quill-container .ql-editor.ql-blank::before {
+  color: #475569;
+  font-style: italic;
+}
+
+.quill-container .ql-container {
+  border: none;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+/* ============================
+   Suggestion Dropdown
+   ============================ */
+.suggestion-dropdown {
+  position: absolute;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 1000;
+  min-width: 160px;
+  max-width: 260px;
+  overflow: hidden;
+}
+
+.suggestion-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  cursor: pointer;
+  color: #cbd5e1;
+  transition: background 0.1s;
+}
+
+.suggestion-item:hover {
+  background: #2d3f55;
+  color: #f8fafc;
+}
+
+.suggestion-word {
+  font-size: 0.95rem;
+}
+
+.suggestion-prob {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-left: 8px;
+}
+
+/* ============================
+   Context Menu
+   ============================ */
+.context-menu {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  min-width: 200px;
+  overflow: hidden;
+}
+
+.context-menu-header {
+  padding: 8px 14px;
+  background: #334155;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  border-bottom: 1px solid #475569;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #cbd5e1;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.1s;
+}
+
+.context-menu-item:hover {
+  background: #2d3f55;
+  color: #f8fafc;
+}
+
+.context-menu-result {
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  border-top: 1px solid #334155;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.context-menu-result.loading {
+  color: #64748b;
+}
+
+.error-text { color: #ef4444; }
+.ok-text { color: #22c55e; }

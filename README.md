@@ -197,4 +197,4 @@ docker-compose up --build
 | [njakaniavo4789](https://github.com/njakaniavo4789) | Frontend React |
 | [Devkalix](https://github.com/Devkalix) | Frontend React |
 | [TatumLn](https://github.com/TatumLn) | DevOps / Data / Scraping |
-| [Toby7431](https://github.com/Toby7431) | Data |
+| [Toby7431](https://github.com/Toby7431) | Devops / Backend NLP |
