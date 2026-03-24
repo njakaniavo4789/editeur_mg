@@ -176,7 +176,7 @@ function SentimentModal({ getText, onClose }) {
             <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#6366f1,#a78bfa)", display:"flex", alignItems:"center", justifyContent:"center" }}>
               <Ico n="smile" s={16} color="#fff" />
             </div>
-            <span style={{ fontFamily:"'Playfair Display',serif", fontWeight:700, fontSize:16, color: "#f1f5f9" }}>Fanadihana Hevitra</span>
+            <span style={{ fontFamily:"'Playfair Display',serif", fontWeight:700, fontSize:16, color: "#f1f5f9" }}>Toetran-dahatsoratra</span>
           </div>
           <button onClick={onClose} style={{ background: "#1e293b", border:"none", borderRadius:8, width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color: "#94a3b8" }}>
             <Ico n="close" s={13} />
@@ -396,9 +396,9 @@ function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTi
   const surf = "#0d1828";
 
   const NAV = [
-    { id: "sentiment", icon: "smile", label: "Fanadihana Hevitra", color: "#8b5cf6" },
-    { id: "chatbot", icon: "bot", label: "Mpanolotsaina avo", color: "#06b6d4" },
-    { id: "synthese", icon: "mic", label: "Malagasy", color: "#f59e0b" },
+    { id: "sentiment", icon: "smile", label: "Toetran-dahatsoratra", color: "#8b5cf6" },
+    { id: "chatbot", icon: "bot", label: "Mpanolo-tsaina", color: "#06b6d4" },
+    { id: "synthese", icon: "mic", label: "Famakian-teny", color: "#f59e0b" },
   ];
 
   return (
@@ -490,7 +490,7 @@ function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTi
           style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", padding: "10px 14px", borderRadius: 11, border: "none", cursor: "pointer", background: "linear-gradient(135deg,#3b82f6,#1d4ed8)", color: "#fff", fontSize: 12.5, fontWeight: 700, fontFamily: "'DM Sans',sans-serif", boxShadow: "0 4px 16px rgba(59,130,246,0.4)", marginTop: 4, transition: "all .2s" }}
           onMouseEnter={e => e.currentTarget.style.boxShadow = "0 6px 20px rgba(59,130,246,0.55)"}
           onMouseLeave={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(59,130,246,0.4)"}>
-          <Ico n="publish" s={13} color="#fff" /> Hamerina
+          <Ico n="publish" s={13} color="#fff" /> Hizara
         </button>
       </div>
     </div>
