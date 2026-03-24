@@ -36,7 +36,7 @@ export default function EditorCore() {
     const quill = new Quill(editorRef.current, {
       theme: 'snow',
       placeholder: 'Soraty eto ny lahatsoratra Malagasy...',
-      modules: { toolbar: false },
+      modules: { toolbar: true },
     })
     quillRef.current = quill
 

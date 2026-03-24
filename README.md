@@ -198,3 +198,6 @@ docker-compose up --build
 | [Devkalix](https://github.com/Devkalix) | Frontend React |
 | [TatumLn](https://github.com/TatumLn) | DevOps / Data / Scraping |
 | [Toby7431](https://github.com/Toby7431) | DevOps / Backend NLP |
+
+## Lien de la video de presentation 
+- [test_video](https://drive.google.com/file/d/13_4-HVYdgCsw_HQSM8EOP7vNilxp5ZSh/view?usp=sharing)

@@ -170,3 +170,23 @@
 
 .error-text { color: #ef4444; }
 .ok-text { color: #22c55e; }
+
+.ql-toolbar {
+  background: #ffffff;
+  border: none;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.ql-container {
+  background: #ffffff;
+  border: none;
+}
+
+/* Icônes */
+.ql-toolbar .ql-stroke {
+  stroke: #333;
+}
+
+.ql-toolbar .ql-fill {
+  fill: #333;
+}
