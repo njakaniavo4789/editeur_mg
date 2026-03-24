@@ -1,25 +1,42 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types
+import getpass # Ity no ampiasaina mba tsy hiseho eo amin'ny écran izay soratanao
 
-# 1. Ampidiro ny API Key-nao
-genai.configure(api_key="AIzaSyAWqd4Q_fNJqVgwdDM-ZV8G58TToKtqTP0")
+def hanomboka_chat():
+    print("--- TOROMARIKA MOMBA NY API KEY ---")
+    print("1. Mandehana ao amin'ny: https://aistudio.google.com/")
+    print("2. Fafao ilay API Key taloha (raha mbola eo).")
+    print("3. Tsindrio ny 'Create API key' hahazoana iray vaovao tanteraka.")
+    print("----------------------------------\n")
 
-# 2. Amboary ny "System Instruction" mba hiteny malagasy foana izy
-instruction = "Tsy maintsy mamaly amin'ny teny malagasy foana ianao, na inona na inona fiteny ampiasain'ny olona miresaka aminao. Raha misy teny teknika dia azonao hazavaina amin'ny teny malagasy tsotra."
+    # Ampiasaina ny getpass mba ho feno kintana (*) ny teny soratanao ho fiarovana
+    api_key = getpass.getpass("Ampidiro ny API Key vaovao (tsy hiseho ny soratra): ")
 
-model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash", # Ity no modely haingana sy maimaim-poana
-    system_instruction=instruction
-)
-
-# 3. Manomboka ny resaka
-chat = model.start_chat(history=[])
-
-print("--- Gemini amin'ny teny malagasy (Soraty 'exit' raha hampiato) ---")
-
-while True:
-    user_input = input("Ianao: ")
-    if user_input.lower() == 'exit':
-        break
+    try:
+        client = genai.Client(api_key=api_key)
         
-    response = chat.send_message(user_input)
-    print(f"Gemini: {response.text}")
+        # Toromarika ho an'ny rafitra
+        sys_instruct = "Tsy maintsy mamaly amin'ny teny malagasy foana ianao. Manampy amin'ny fitadiavana teny mitovy hevitra sy conjugaison ianao."
+
+        chat = client.chats.create(
+            model="gemini-2.0-flash",
+            config=types.GenerateContentConfig(system_instruction=sys_instruct)
+        )
+
+        print("\n--- Chatbot Malagasy vonona (Soraty 'exit' raha hampiato) ---")
+        
+        while True:
+            user_input = input("\nIanao: ")
+            if user_input.lower() in ['exit', 'hijanona', 'veloma']:
+                print("Gemini: Veloma finaritra!")
+                break
+            
+            response = chat.send_message(user_input)
+            print(f"Gemini: {response.text}")
+
+    except Exception as e:
+        print(f"\n[ERROR] Nisy olana: {e}")
+        print("Hamarino tsara ilay API Key vaovao vao noforoninao.")
+
+if __name__ == "__main__":
+    hanomboka_chat()
