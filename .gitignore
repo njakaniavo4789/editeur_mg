@@ -12,7 +12,6 @@ dist/
 .env.local
 
 # Data brute (trop lourde)
-data_raw/
 *.mp3
 
 # IDE
