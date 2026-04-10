@@ -1,0 +1,179 @@
+{
+  "name": "Scraper Teny Malagasy",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "51886614-a549-4d06-8492-16645344030b",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "http://tenymalagasy.org/bins/rootLists?o=letz",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "80847dd9-2f9d-4420-82c4-fba17fae7a28",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mandray ny HTML avy amin'ny HTTP Request\nconst html = $input.first().json.body || \n             $input.first().json.data || \n             $input.first().json.content ||\n             JSON.stringify($input.first().json);\n\nconst lettre = 'Z'; // ← ovay isaky ny lettre\n\nconst results = [];\n\n// Mahita ny table.menuLink ihany\nconst tableMatch = html.match(/<table[^>]*class='menuLink'[^>]*>([\\s\\S]*?)<\\/table>/);\nif (!tableMatch) return [{ json: { error: \"Table tsy hita\" } }];\n\nconst tableHtml = tableMatch[1];\n\n// Mahita rows tsirairay\nconst rowRegex = /<tr[^>]*>([\\s\\S]*?)<\\/tr>/g;\nlet rowMatch;\n\nwhile ((rowMatch = rowRegex.exec(tableHtml)) !== null) {\n  const rowHtml = rowMatch[1];\n  \n  // Mandray ny td roa\n  const tdRegex = /<td[^>]*>([\\s\\S]*?)<\\/td>/g;\n  const tds = [];\n  let tdMatch;\n  while ((tdMatch = tdRegex.exec(rowHtml)) !== null) {\n    tds.push(tdMatch[1]);\n  }\n  \n  if (tds.length < 2) continue;\n  \n  // Fototeny — link voalohany ao amin'ny td[0]\n  const fotoMatch = tds[0].match(/href='\\/bins\\/teny2\\/[^']*'>([^<]*(?:<[^>]*>[^<]*<\\/[^>]*>)?[^<]*)<\\/a>/);\n  if (!fotoMatch) continue;\n  \n  const fototeny = fotoMatch[1]\n    .replace(/<[^>]+>/g, '')   // esorina ny tags rehetra\n    .replace(/&agrave;/g, 'à')\n    .replace(/&eacute;/g, 'é')\n    .replace(/&egrave;/g, 'è')\n    .replace(/&ntilde;/g, 'ñ')\n    .replace(/&ocirc;/g, 'ô')\n    .trim();\n  \n  if (!fototeny || fototeny.length < 1) continue;\n  \n  // Sampateny — links rehetra ao amin'ny td[1]\n  const sampRegex = /href='\\/bins\\/teny2\\/[^']*'>([^<]*(?:<[^>]*>[^<]*<\\/[^>]*>)?[^<]*)<\\/a>/g;\n  const sampateny = [];\n  let sampMatch;\n  \n  while ((sampMatch = sampRegex.exec(tds[1])) !== null) {\n    const teny = sampMatch[1]\n      .replace(/<[^>]+>/g, '')\n      .replace(/&agrave;/g, 'à')\n      .replace(/&eacute;/g, 'é')\n      .replace(/&egrave;/g, 'è')\n      .replace(/&ntilde;/g, 'ñ')\n      .replace(/&ocirc;/g, 'ô')\n      .trim();\n    if (teny) sampateny.push(teny);\n  }\n  \n  results.push({\n    json: {\n      fototeny:  fototeny,\n      sampateny: sampateny.join(', '),\n      lettre:    lettre\n    }\n  });\n}\nreturn results.length > 0 ? results : [{ json: { error: \"Tsy hita na inona na inona\" } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "896ff86b-306a-4d86-be25-aadc9dc41471",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1mnrBq6_dHPUESYKtYTlHiLXS1WCBWYNIu67twwTTd-w",
+          "mode": "list",
+          "cachedResultName": "fotetny_sampateny_lettre",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1mnrBq6_dHPUESYKtYTlHiLXS1WCBWYNIu67twwTTd-w/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Feuille 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1mnrBq6_dHPUESYKtYTlHiLXS1WCBWYNIu67twwTTd-w/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fototeny",
+              "displayName": "fototeny",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sampateny",
+              "displayName": "sampateny",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lettre",
+              "displayName": "lettre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        832,
+        0
+      ],
+      "id": "7a32b571-ce4f-41d1-ad7c-59360c07f9da",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "U4goSNDeUzpclr83",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b9901c7a-8bc6-4592-9310-9808c0563a0e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1e855227c469cc4a25e2db93a8e662f42a0bb694513f8199bf8f6b4aebf61dc2"
+  },
+  "id": "mSEtSQVxFFg4HY7S",
+  "tags": []
+}
