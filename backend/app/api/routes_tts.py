@@ -11,4 +11,4 @@ class TTSRequest(BaseModel):
 @router.post("/tts")
 async def tts(req: TTSRequest):
     path = await generer_audio(req.texte)
-    return FileResponse(path, media_type="audio/mpeg", filename="output.mp3")
+    return FileResponse(path, media_type="audio/wav", filename="output.wav")
