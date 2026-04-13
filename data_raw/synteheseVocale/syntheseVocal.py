@@ -1,29 +1,66 @@
-# -*- coding: utf-8 -*-
 """
-🎤 SYNTHÈSE VOCALE MALGACHE - Version 2.0 améliorée
-Accent malgache réaliste via :
-  1. Phonétique malgache rigoureuse (accent, syllabes, consonnes finales, etc.)
-  2. Post-traitement audio avec pydub (pitch, tempo, EQ, réverbération)
+╔══════════════════════════════════════════════════════════╗
+║   TTS MALGACHE v2 – Vraie voix malgache                 ║
+║   Modèle : facebook/mms-tts-mlg (Meta AI)               ║
+║   100% gratuit, offline, aucun API payant                ║
+╚══════════════════════════════════════════════════════════╝
 
-Dépendances :
-    pip install gtts pydub pygame
-    # + ffmpeg dans le PATH (https://ffmpeg.org/download.html)
+PRINCIPE :
+  Ce programme utilise le modèle VITS entraîné par Meta AI
+  spécifiquement sur la langue malgache (ISO 639-3 : mlg).
+  Le modèle génère une vraie voix malgache native, sans
+  approximation phonétique.
+
+INSTALLATION (une seule fois) :
+  pip install transformers torch scipy pydub numpy
+
+  Optionnel (lecture audio) :
+  pip install pygame
+  ou
+  pip install playsound==1.2.2
+
+  Sur Linux :
+  sudo apt install ffmpeg libsndfile1
+
+  Sur macOS :
+  brew install ffmpeg libsndfile
 """
 
-import re
-import time
 import os
-from gtts import gTTS
+import sys
+import argparse
+import tempfile
+import numpy as np
 
-# ── Imports optionnels ────────────────────────────────────────────────
+# ── Vérification des dépendances ────────────────────────
+
+def check_deps():
+    missing = []
+    for pkg in ['transformers', 'torch', 'scipy']:
+        try:
+            __import__(pkg)
+        except ImportError:
+            missing.append(pkg)
+    if missing:
+        print(f"[ERREUR] Bibliothèques manquantes : {', '.join(missing)}")
+        print("         Lancez : pip install " + " ".join(missing))
+        sys.exit(1)
+
+check_deps()
+
+import torch
+import scipy.io.wavfile
+from transformers import VitsModel, AutoTokenizer
+
+# ── Lecture audio ────────────────────────────────────────
+
 try:
     from pydub import AudioSegment
-    from pydub.effects import normalize, low_pass_filter
+    from pydub.effects import speedup
     PYDUB_OK = True
 except ImportError:
     PYDUB_OK = False
-    print("⚠️  pydub non installé → post-traitement audio désactivé")
-    print("   Installez : pip install pydub  +  ffmpeg dans votre PATH")
+    print("[ATTENTION] pydub absent – effets audio désactivés.")
 
 try:
     import pygame
@@ -31,366 +68,459 @@ try:
 except ImportError:
     PYGAME_OK = False
 
-# ─────────────────────────────────────────────────────────────────────
-# PARTIE 1 : PHONÉTIQUE MALGACHE
-# ─────────────────────────────────────────────────────────────────────
+try:
+    from playsound import playsound
+    PLAYSOUND_OK = True
+except ImportError:
+    PLAYSOUND_OK = False
 
-# Groupes consonantiques malgaches → prononciation française approchée
-CONSONNES_MG = {
-    # Géminées et clusters typiques
-    "ts":  "ts",
-    "tr":  "tr",
-    "dr":  "dr",
-    "mb":  "mb",
-    "mp":  "mp",
-    "nd":  "nd",
-    "ng":  "ng",
-    "nk":  "nk",
-    "nt":  "nt",
-    "nts": "nts",
-    "ny":  "gni",   # ny malgache → son "gn" français
-    "ry":  "ri",
-    "ty":  "tchi",
-    "dy":  "dji",
-    "ky":  "ki",
-    "vy":  "vi",
-    "sy":  "si",
-    "hy":  "i",     # h malgache → souvent muet ou très léger
-    # Voyelles spécifiques
-    "ao":  "aou",   # diphtongue caractéristique
-    "ai":  "aï",
-    "oa":  "oua",
-    "ia":  "ia",
-    "io":  "iou",
-    "eo":  "éou",
-}
 
-# Mots malgaches courants → transcription phonétique française
-LEXIQUE = {
-    "akory":      "a-kou-ri",
-    "aby":        "a-bi",
-    "manao":      "ma-naou",
-    "ahoana":     "a-hou-na",        # 'h' quasi-muet, finale '-na' muette
-    "misaotra":   "mi-saou-tra",
-    "mazoto":     "ma-zou-tou",
-    "veloma":     "vé-lou-ma",
-    "androany":   "an-droua-ni",
-    "lisany":     "li-sa-ni",
-    "tonga soa":  "toun-ga soua",
-    "salama":     "sa-la-ma",
-    "tsara":      "tsa-ra",
-    "fitiavana":  "fi-tia-va-na",
-    "fihavanana": "fi-ha-va-na-na",
-    "tanana":     "ta-na-na",
-    "tanàna":     "ta-na-na",
-    "vary":       "va-ri",
-    "omby":       "oum-bi",
-    "alina":      "a-li-na",
-    "hariva":     "a-ri-va",         # 'h' initial muet
-    "maraina":    "ma-raï-na",
-    "zaza":       "za-za",
-    "ray":        "raï",
-    "reny":       "ré-ni",
-    "havana":     "a-va-na",
-    "fady":       "fa-di",
-    "lamba":      "lam-ba",
-    "mofo":       "mou-fou",
-    "ronono":     "rou-nou-nou",
-    "rano":       "ra-nou",
-    "antananarivo":"an-ta-na-na-ri-vou",
-    "madagascar": "ma-da-gas-kar",
-    "malagasy":   "ma-la-ga-si",
-    "merina":     "mé-ri-na",
-    "betsileo":   "bét-si-léou",
-}
+# ════════════════════════════════════════════════════════
+#  1. CHARGEMENT DU MODÈLE MALGACHE
+#     facebook/mms-tts-mlg — modèle VITS de Meta AI
+#     Téléchargé automatiquement (~100 MB) au premier lancement
+# ════════════════════════════════════════════════════════
 
-def accentuer_syllabe(mot: str) -> str:
+MODEL_ID = "facebook/mms-tts-mlg"
+_model = None
+_tokenizer = None
+
+
+def load_model():
     """
-    En malgache, l'accent porte sur l'avant-dernière syllabe
-    (pénultième) sauf si la dernière est '-na', '-ka', '-tra' etc.
-    On découpe naïvement en syllabes CV et insère une virgule
-    orthographique pour forcer l'accent gTTS.
+    Charge le modèle TTS malgache de Facebook (une seule fois en mémoire).
+    Le modèle est mis en cache automatiquement par Hugging Face.
     """
-    # Voyelles malgaches
-    voyelles = "aeiouàâäéèêëîïôùûü"
-
-    syllabes = []
-    courante = ""
-    for ch in mot:
-        courante += ch
-        if ch.lower() in voyelles:
-            syllabes.append(courante)
-            courante = ""
-    if courante:                          # consonne(s) finales
-        if syllabes:
-            syllabes[-1] += courante
-        else:
-            syllabes.append(courante)
-
-    if len(syllabes) < 2:
-        return mot
-
-    # Règle : consonne finale muette → l'accent recule d'une syllabe
-    # On allonge la voyelle de l'avant-dernière syllabe via redoublement
-    idx = -2
-    if len(syllabes) >= 2:
-        avant_dern = syllabes[idx]
-        # Allonger la voyelle accentuée
-        elongee = ""
-        for ch in avant_dern:
-            elongee += ch
-            if ch.lower() in voyelles:
-                elongee += ch          # doublement → gTTS allonge légèrement
-        syllabes[idx] = elongee
-
-    return "".join(syllabes)
+    global _model, _tokenizer
+    if _model is None:
+        print("[INFO] Chargement du modèle facebook/mms-tts-mlg...")
+        print("       (Premier lancement : ~100 MB téléchargés depuis Hugging Face)")
+        _tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+        _model = VitsModel.from_pretrained(MODEL_ID)
+        _model.eval()  # mode inférence (pas d'entraînement)
+        print("[INFO] Modèle chargé avec succès ✓")
+    return _model, _tokenizer
 
 
-def appliquer_regles_finales(mot: str) -> str:
+# ════════════════════════════════════════════════════════
+#  2. PRÉTRAITEMENT DU TEXTE MALGACHE
+#     Normalisation légère avant envoi au modèle
+# ════════════════════════════════════════════════════════
+
+def preprocess_malagasy(text: str) -> str:
     """
-    Règles phonétiques de fin de mot :
-    - '-na' final → très bref (quasi muet, on l'atténue)
-    - '-ka' final → presque muet
-    - '-tra' final → 'tra' bref
-    - 'a' final souvent abrégé
-    - 'i' final → son 'i' allongé
+    Normalise le texte malgache pour le modèle VITS :
+      - Supprime les caractères non supportés
+      - Normalise les espaces
+      - Met en minuscules (le modèle est sensible à la casse)
     """
-    m = mot.lower()
-    # Finales quasi-muettes : on garde mais on n'allonge pas
-    for finale in ("ana", "ina", "ona", "ena", "una"):
-        if m.endswith(finale) and len(mot) > len(finale) + 1:
-            return mot                  # laisser tel quel, pas d'allongement
+    # Le modèle a été entraîné sur du texte malgache en minuscules
+    text = text.strip().lower()
 
-    # '-i' final → accentuer
-    if m.endswith("i") and len(mot) > 2:
-        return mot[:-1] + "ii"         # gTTS lira le 'i' un peu plus long
+    # Remplace les tirets longs et caractères spéciaux
+    text = text.replace('–', '-').replace('—', '-')
+    text = text.replace('"', '"').replace('"', '"')
+    text = text.replace("'", "'").replace("'", "'")
 
-    return mot
+    # Supprime les caractères non ASCII sauf les lettres accentuées usuelles
+    allowed_extras = set("àâäéèêëîïôùûü-.,!?;:' ")
+    cleaned = ''.join(c for c in text if c.isalpha() or c.isdigit() or c in allowed_extras)
 
+    # Normalise les espaces multiples
+    cleaned = ' '.join(cleaned.split())
 
-def translitterer_clusters(texte: str) -> str:
-    """Remplace les groupes consonantiques malgaches par leur équivalent français."""
-    for cluster, remplacement in sorted(CONSONNES_MG.items(), key=lambda x: -len(x[0])):
-        texte = texte.replace(cluster, remplacement)
-    return texte
+    return cleaned
 
 
-def preparer_texte_malgache(texte: str) -> str:
+# ════════════════════════════════════════════════════════
+#  3. GÉNÉRATION AUDIO AVEC LE MODÈLE MALGACHE
+# ════════════════════════════════════════════════════════
+
+def generate_audio_mlg(text: str, speaking_rate: float = 1.0) -> tuple:
     """
-    Pipeline complet de pré-traitement phonétique malgache :
-    1. Normalisation Unicode (voyelles accentuées)
-    2. Substitution des mots connus (lexique)
-    3. Translittération des clusters consonantiques
-    4. Accentuation syllabique mot par mot
-    5. Règles de finales
-    6. Ponctuation rythmique (pauses naturelles)
+    Génère un tableau numpy de forme d'onde audio à partir du texte malgache.
+
+    Paramètres :
+        text          : texte malgache normalisé
+        speaking_rate : vitesse de parole (0.8 = lent, 1.0 = normal, 1.2 = rapide)
+
+    Retourne : (waveform: np.ndarray, sample_rate: int)
     """
-    # 1. Normalisation des voyelles accentuées
-    rempl_unicode = {
-        "ô": "o", "Ô": "O", "â": "a", "ê": "e", "î": "i", "û": "u",
-        "à": "a", "è": "e", "ì": "i", "ò": "o", "ù": "u",
-        "ñ": "n", "ç": "s",
-        # Garder les accents utiles pour gTTS
-        "é": "é", "è": "è",
-    }
-    for ancien, nouveau in rempl_unicode.items():
-        texte = texte.replace(ancien, nouveau)
+    model, tokenizer = load_model()
 
-    # 2. Substitution lexique (avant toute autre transformation)
-    texte_bas = texte.lower()
-    for mot_mg, phonetique in sorted(LEXIQUE.items(), key=lambda x: -len(x[0])):
-        if mot_mg in texte_bas:
-            # Remplacement insensible à la casse
-            pattern = re.compile(re.escape(mot_mg), re.IGNORECASE)
-            texte = pattern.sub(phonetique, texte)
+    # Tokenisation du texte
+    inputs = tokenizer(text, return_tensors="pt")
 
-    # 3. Translittération clusters consonantiques
-    texte = translitterer_clusters(texte)
+    # Ajustement du débit via le paramètre interne du modèle VITS
+    # speaking_rate modifie la durée prédite de chaque phonème
+    if hasattr(model, 'speaking_rate'):
+        model.speaking_rate = speaking_rate
 
-    # 4. Accentuation syllabique mot par mot
-    mots = texte.split()
-    mots_traites = []
-    for mot in mots:
-        # Isoler la ponctuation
-        ponctuation = ""
-        noyau = mot
-        while noyau and noyau[-1] in ".,!?;:":
-            ponctuation = noyau[-1] + ponctuation
-            noyau = noyau[:-1]
-        if noyau:
-            noyau = accentuer_syllabe(noyau)
-            noyau = appliquer_regles_finales(noyau)
-        mots_traites.append(noyau + ponctuation)
-    texte = " ".join(mots_traites)
+    # Génération de la forme d'onde (sans calcul de gradient = plus rapide)
+    with torch.no_grad():
+        # On fixe le seed pour une génération reproductible
+        torch.manual_seed(42)
+        output = model(**inputs)
 
-    # 5. Intonation chantante : pauses légères après groupes accentués
-    #    On insère des virgules après les mots de 3+ syllabes (groupes toniques)
-    mots = texte.split()
-    resultat = []
-    for i, mot in enumerate(mots):
-        resultat.append(mot)
-        voyelles_mot = sum(1 for c in mot if c.lower() in "aeiouéè")
-        # Pause après mot polysyllabique (rythme malgache)
-        if voyelles_mot >= 3 and not mot.endswith((",", ".", "!", "?", ";")):
-            resultat.append(",")
-    texte = " ".join(resultat)
+    # Extraction de la forme d'onde (shape : [1, 1, T] ou [1, T])
+    waveform = output.waveform.squeeze().numpy()
 
-    # 6. Nettoyage : supprimer les virgules doubles, espaces multiples
-    texte = re.sub(r",\s*,", ",", texte)
-    texte = re.sub(r"\s+", " ", texte)
+    sample_rate = model.config.sampling_rate  # généralement 16000 Hz
 
-    return texte.strip()
+    return waveform, sample_rate
 
 
-# ─────────────────────────────────────────────────────────────────────
-# PARTIE 2 : POST-TRAITEMENT AUDIO (pydub)
-# ─────────────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════
+#  4. POST-TRAITEMENT AUDIO
+#     Amélioration de la qualité et ajustements pitch/tempo
+# ════════════════════════════════════════════════════════
 
-def post_traiter_audio(fichier_in: str, fichier_out: str) -> bool:
+def normalize_audio(waveform: np.ndarray) -> np.ndarray:
+    """Normalise l'amplitude pour éviter la saturation."""
+    max_val = np.abs(waveform).max()
+    if max_val > 0:
+        waveform = waveform / max_val * 0.95
+    return waveform
+
+
+def save_wav(waveform: np.ndarray, sample_rate: int) -> str:
     """
-    Modifie l'audio gTTS pour approcher une voix malgache :
-    - Légère baisse de pitch (voix plus grave, chaleureuse)
-    - Tempo légèrement ralenti (débit malgache plus posé)
-    - Filtre passe-bas doux (moins crisp, plus naturel)
-    - Normalisation du volume
-    - Légère réverbération simulée (delay + mix)
-    Retourne True si succès.
+    Sauvegarde la forme d'onde dans un fichier WAV temporaire.
+    Retourne le chemin du fichier.
+    """
+    waveform = normalize_audio(waveform)
+    # Conversion en int16 pour scipy
+    waveform_int = (waveform * 32767).astype(np.int16)
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+    scipy.io.wavfile.write(tmp.name, sample_rate, waveform_int)
+    return tmp.name
+
+
+def apply_audio_effects(wav_path: str, pitch_semitones: int = 0, speed: float = 1.0) -> str:
+    """
+    Applique des effets audio via pydub :
+      - pitch_semitones : décalage de hauteur (+2 = plus aigu, -2 = plus grave)
+      - speed           : facteur de vitesse (0.9 = 10% plus lent)
+
+    Retourne le chemin du fichier WAV modifié.
     """
     if not PYDUB_OK:
-        return False
+        return wav_path
 
-    try:
-        audio = AudioSegment.from_mp3(fichier_in)
+    audio = AudioSegment.from_wav(wav_path)
+    original_rate = audio.frame_rate
 
-        # — Tempo légèrement ralenti (×0.92) via resampling —
-        # Abaisser le sample rate → ralentit ET baisse le pitch
-        # Puis remonter le sample rate → corrige le pitch partiellement
-        # Effet net : voix plus grave et légèrement plus lente
-        original_frame_rate = audio.frame_rate
+    # ── Ajustement du pitch ──
+    if pitch_semitones != 0:
+        new_rate = int(original_rate * (2 ** (pitch_semitones / 12.0)))
+        audio = audio._spawn(audio.raw_data, overrides={"frame_rate": new_rate})
+        audio = audio.set_frame_rate(original_rate)
 
-        # Pitch down ~1.5 demi-tons : frame_rate × 2^(-1.5/12) ≈ × 0.916
-        pitch_factor = 0.916
-        audio_pitched = audio._spawn(
+    # ── Ajustement du tempo ──
+    if speed > 1.0:
+        audio = speedup(audio, playback_speed=speed, chunk_size=150)
+    elif speed < 1.0 and speed > 0:
+        slow_rate = int(original_rate * speed)
+        audio = audio._spawn(
             audio.raw_data,
-            overrides={"frame_rate": int(original_frame_rate * pitch_factor)}
-        ).set_frame_rate(original_frame_rate)
+            overrides={"frame_rate": slow_rate}
+        ).set_frame_rate(original_rate)
 
-        # — Filtre passe-bas à 5000 Hz (atténue les hautes fréquences stridentes) —
-        audio_filtered = low_pass_filter(audio_pitched, 5000)
+    # ── Normalisation du volume ──
+    audio = audio.normalize()
 
-        # — Normalisation volume —
-        audio_norm = normalize(audio_filtered)
-
-        # — Réverbération simulée (simple delay + atténuation) —
-        delay_ms = 38           # délai de réverbération court (pièce petite)
-        decay_db = -14          # atténuation de l'écho
-        silence = AudioSegment.silent(duration=delay_ms)
-        echo = audio_norm - abs(decay_db)
-        # Superposer l'écho décalé sur l'original
-        audio_reverb = audio_norm.overlay(silence + echo)
-
-        # — Légère amplification finale (+1 dB) —
-        audio_final = audio_reverb + 1
-
-        # Export MP3 haute qualité
-        audio_final.export(fichier_out, format="mp3", bitrate="192k")
-        return True
-
-    except Exception as e:
-        print(f"⚠️  Post-traitement audio échoué : {e}")
-        return False
+    out = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+    audio.export(out.name, format='wav')
+    os.unlink(wav_path)
+    return out.name
 
 
-# ─────────────────────────────────────────────────────────────────────
-# PARTIE 3 : LECTURE AUDIO
-# ─────────────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════
+#  5. LECTURE AUDIO
+# ════════════════════════════════════════════════════════
 
-def lire_audio(fichier: str):
-    """Lecture du fichier MP3 via pygame (stable Windows/Linux/Mac)."""
+def play_audio(filepath: str):
+    """Lit le fichier audio WAV selon les bibliothèques disponibles."""
+
     if PYGAME_OK:
-        try:
-            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-            pygame.mixer.music.load(fichier)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                time.sleep(0.1)
-            pygame.mixer.quit()
-            return
-        except Exception as e:
-            print(f"⚠️  pygame : {e}")
+        pygame.mixer.init(frequency=16000)
+        pygame.mixer.music.load(filepath)
+        pygame.mixer.music.play()
+        while pygame.mixer.music.get_busy():
+            pygame.time.Clock().tick(10)
+        pygame.mixer.quit()
 
-    # Fallback : playsound
-    try:
-        from playsound import playsound
-        playsound(fichier)
-    except Exception as e:
-        print(f"⚠️  playsound : {e}")
-        print(f"   Ouvrez manuellement : {os.path.abspath(fichier)}")
+    elif PLAYSOUND_OK:
+        playsound(filepath)
+
+    else:
+        print(f"[INFO] Fichier audio : {filepath}")
+        if sys.platform == 'darwin':
+            os.system(f'afplay "{filepath}"')
+        elif sys.platform.startswith('linux'):
+            os.system(f'aplay "{filepath}" 2>/dev/null || mpg123 "{filepath}" 2>/dev/null')
+        elif sys.platform == 'win32':
+            os.startfile(filepath)
+        else:
+            print("[INFO] Impossible de lire automatiquement. Ouvrez le fichier manuellement.")
 
 
-# ─────────────────────────────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════
+#  6. MODES VOIX
+#     Préréglages pour voix homme / femme / neutre
+# ════════════════════════════════════════════════════════
+
+VOICE_PRESETS = {
+    'neutre': {
+        'pitch_semitones': 0,
+        'speed': 1.0,
+        'speaking_rate': 1.0,
+        'description': 'Voix neutre du modèle (recommandé pour commencer)'
+    },
+    'femme': {
+        'pitch_semitones': +3,    # +3 demi-tons = voix plus aiguë
+        'speed': 1.0,
+        'speaking_rate': 0.95,
+        'description': 'Simulation voix féminine (pitch relevé)'
+    },
+    'homme': {
+        'pitch_semitones': -3,    # -3 demi-tons = voix plus grave
+        'speed': 0.95,
+        'speaking_rate': 1.05,
+        'description': 'Simulation voix masculine (pitch abaissé)'
+    },
+}
+
+
+# ════════════════════════════════════════════════════════
+#  7. PROGRAMME PRINCIPAL
+# ════════════════════════════════════════════════════════
 
 def main():
-    print("=" * 75)
-    print("🎤 SYNTHÈSE VOCALE MALGACHE - Version 2.0")
-    print("   Phonétique malgache réelle + post-traitement audio pydub")
-    print("=" * 75)
+    parser = argparse.ArgumentParser(
+        description="TTS Malgache v2 – Vraie voix malgache (facebook/mms-tts-mlg)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Exemples de textes malgaches :
+  "manao ahoana ianao"         → Comment allez-vous ?
+  "misaotra betsaka"           → Merci beaucoup
+  "faly mahita anao"           → Content de vous voir
+  "veloma"                     → Au revoir
+  "tiako ianao"                → Je t'aime
+  "mora mora"                  → Doucement
+  "tsara ny andro anio"        → Il fait beau aujourd'hui
+        """
+    )
+    parser.add_argument(
+        '--voix', '-v',
+        choices=['neutre', 'femme', 'homme'],
+        default='neutre',
+        help="Type de voix : neutre / femme / homme (défaut: neutre)"
+    )
+    parser.add_argument(
+        '--texte', '-t',
+        type=str,
+        default=None,
+        help="Texte malgache à lire directement (sans saisie interactive)"
+    )
+    parser.add_argument(
+        '--sauvegarder', '-s',
+        type=str,
+        default=None,
+        metavar='FICHIER.wav',
+        help="Sauvegarder l'audio dans un fichier WAV au lieu de le lire"
+    )
+    parser.add_argument(
+        '--vitesse',
+        type=float,
+        default=None,
+        help="Vitesse manuelle (ex: 0.85 = lent, 1.2 = rapide)"
+    )
+    args = parser.parse_args()
 
-    if not PYDUB_OK:
-        print("\n💡 Pour activer le post-traitement audio :")
-        print("   pip install pydub pygame")
-        print("   + installer ffmpeg : https://ffmpeg.org/download.html\n")
+    # ── Bannière ──
+    print()
+    print("╔══════════════════════════════════════════════════════╗")
+    print("║   🎙️  TTS MALGACHE v2 — facebook/mms-tts-mlg        ║")
+    print("║   Vraie voix malgache, modèle Meta AI               ║")
+    print("╚══════════════════════════════════════════════════════╝")
 
-    texte = input("\n✍️  Texte à lire (malgache ou mélangé) :\n> ").strip()
+    preset = VOICE_PRESETS[args.voix]
+    print(f"\n   Voix      : {args.voix} — {preset['description']}")
+
+    speed_final = args.vitesse if args.vitesse else preset['speed']
+    print(f"   Vitesse   : {speed_final}")
+    print()
+
+    # ── Saisie du texte ──
+    if args.texte:
+        texte = args.texte
+    else:
+        print("Entrez votre texte en malgache (puis appuyez sur Entrée) :")
+        print("Exemple : manao ahoana ianao\n")
+        texte = input(">>> ").strip()
+
     if not texte:
-        print("❌ Aucun texte saisi.")
-        return
+        print("[ERREUR] Aucun texte saisi.")
+        sys.exit(1)
 
-    print("\n⏳ Analyse phonétique en cours...")
-    texte_prepare = preparer_texte_malgache(texte)
+    # ── Étape 1 : Prétraitement ──
+    print("\n[1/4] Prétraitement du texte...")
+    texte_clean = preprocess_malagasy(texte)
+    print(f"      Original  : {texte}")
+    print(f"      Nettoyé   : {texte_clean}")
 
-    print(f"\n📝 Texte original  : {texte}")
-    print(f"🔤 Texte préparé   : {texte_prepare}")
-
-    fichier_brut   = "voix_mg_brute.mp3"
-    fichier_final  = "voix_malgache_hd.mp3"
-
+    # ── Étape 2 : Génération audio ──
+    print("\n[2/4] Génération de la voix malgache (VITS)...")
+    print("      (Peut prendre 5-15 secondes selon votre machine)")
     try:
-        print("\n⏳ Synthèse vocale gTTS...")
-        tts = gTTS(text=texte_prepare, lang="fr", slow=False)
-        tts.save(fichier_brut)
-        print(f"✅ Audio brut généré : {fichier_brut}")
-
-        fichier_a_lire = fichier_brut
-
-        if PYDUB_OK:
-            print("⏳ Post-traitement audio (pitch, réverbération, EQ)...")
-            succes = post_traiter_audio(fichier_brut, fichier_final)
-            if succes:
-                print(f"✅ Audio final      : {fichier_final}")
-                fichier_a_lire = fichier_final
-            else:
-                print("⚠️  Post-traitement échoué, lecture de l'audio brut.")
-
-        print(f"\n🔊 Lecture : {fichier_a_lire}")
-        time.sleep(0.3)
-        lire_audio(fichier_a_lire)
-        print("\n✅ Lecture terminée !")
-
+        waveform, sample_rate = generate_audio_mlg(
+            texte_clean,
+            speaking_rate=preset['speaking_rate']
+        )
     except Exception as e:
-        print(f"\n❌ Erreur : {e}")
-        print("Vérifiez votre connexion internet (gTTS en a besoin).")
+        print(f"\n[ERREUR] Génération échouée : {e}")
+        print("         Vérifiez votre connexion internet (premier téléchargement du modèle)")
+        sys.exit(1)
 
-    finally:
-        # Nettoyage fichier temporaire brut
-        if PYDUB_OK and os.path.exists(fichier_brut):
+    print(f"      ✓ Audio généré ({len(waveform)/sample_rate:.2f} secondes, {sample_rate} Hz)")
+
+    # ── Étape 3 : Sauvegarde WAV ──
+    print("\n[3/4] Enregistrement WAV temporaire...")
+    wav_path = save_wav(waveform, sample_rate)
+
+    # ── Étape 4 : Post-traitement (pitch / tempo) ──
+    print("[4/4] Ajustements audio (pitch / tempo)...")
+    wav_path = apply_audio_effects(
+        wav_path,
+        pitch_semitones=preset['pitch_semitones'],
+        speed=speed_final
+    )
+
+    # ── Sauvegarde ou lecture ──
+    if args.sauvegarder:
+        import shutil
+        shutil.copy(wav_path, args.sauvegarder)
+        os.unlink(wav_path)
+        print(f"\n✅ Fichier audio sauvegardé : {args.sauvegarder}")
+    else:
+        print("\n🔊 Lecture en cours...\n")
+        play_audio(wav_path)
+        try:
+            os.unlink(wav_path)
+        except Exception:
+            pass
+        print("\n✅ Lecture terminée.")
+
+
+# ════════════════════════════════════════════════════════
+#  MODE INTERACTIF EN BOUCLE (bonus)
+# ════════════════════════════════════════════════════════
+
+def mode_interactif():
+    """
+    Mode interactif : saisit et lit plusieurs textes en boucle.
+    Usage : python malagasy_tts_v2.py --interactif
+    """
+    print("\n🎙️  Mode interactif – Tapez 'quitter' pour arrêter\n")
+    load_model()  # Pré-chargement du modèle
+
+    voix_actuelle = 'neutre'
+
+    while True:
+        print(f"\n[Voix: {voix_actuelle}] Entrez un texte malgache (ou 'voix:homme/femme/neutre') :")
+        entree = input(">>> ").strip()
+
+        if entree.lower() in ('quitter', 'exit', 'q'):
+            print("Au revoir! Veloma!")
+            break
+
+        if entree.lower().startswith('voix:'):
+            nouvelle_voix = entree.split(':')[1].strip().lower()
+            if nouvelle_voix in VOICE_PRESETS:
+                voix_actuelle = nouvelle_voix
+                print(f"✓ Voix changée : {voix_actuelle}")
+            else:
+                print(f"[ERREUR] Voix inconnue. Choix : {', '.join(VOICE_PRESETS.keys())}")
+            continue
+
+        if not entree:
+            continue
+
+        try:
+            texte_clean = preprocess_malagasy(entree)
+            preset = VOICE_PRESETS[voix_actuelle]
+            waveform, sample_rate = generate_audio_mlg(texte_clean, preset['speaking_rate'])
+            wav_path = save_wav(waveform, sample_rate)
+            wav_path = apply_audio_effects(wav_path, preset['pitch_semitones'], preset['speed'])
+            print("🔊 Lecture...")
+            play_audio(wav_path)
             try:
-                os.remove(fichier_brut)
+                os.unlink(wav_path)
             except Exception:
                 pass
+        except Exception as e:
+            print(f"[ERREUR] {e}")
 
 
-if __name__ == "__main__":
-    main()
+# ════════════════════════════════════════════════════════
+#  POINT D'ENTRÉE
+# ════════════════════════════════════════════════════════
+
+if __name__ == '__main__':
+    # Détection du mode interactif en boucle
+    if '--interactif' in sys.argv or '-i' in sys.argv:
+        mode_interactif()
+    else:
+        main()
+
+
+# ════════════════════════════════════════════════════════
+#  RÉSUMÉ DES COMMANDES
+# ════════════════════════════════════════════════════════
+"""
+─────────────────────────────────────────────────────────
+  INSTALLATION
+─────────────────────────────────────────────────────────
+  pip install transformers torch scipy pydub pygame
+
+  Linux :   sudo apt install ffmpeg libsndfile1
+  macOS :   brew install ffmpeg libsndfile
+
+─────────────────────────────────────────────────────────
+  UTILISATION
+─────────────────────────────────────────────────────────
+
+  # Saisie interactive (voix neutre)
+  python malagasy_tts_v2.py
+
+  # Voix féminine
+  python malagasy_tts_v2.py --voix femme
+
+  # Voix masculine, texte direct
+  python malagasy_tts_v2.py --voix homme --texte "manao ahoana ianao"
+
+  # Vitesse personnalisée (lent)
+  python malagasy_tts_v2.py --vitesse 0.80
+
+  # Sauvegarder l'audio dans un fichier
+  python malagasy_tts_v2.py --texte "veloma" --sauvegarder sortie.wav
+
+  # Mode interactif en boucle (changer de voix en cours de session)
+  python malagasy_tts_v2.py --interactif
+
+─────────────────────────────────────────────────────────
+  À PROPOS DU MODÈLE
+─────────────────────────────────────────────────────────
+  facebook/mms-tts-mlg est un modèle VITS (Variational
+  Inference with adversarial learning for end-to-end TTS)
+  entraîné par Meta AI sur des données audio malgaches
+  dans le cadre du projet MMS (Massively Multilingual Speech).
+
+  Il produit une voix malgache native, sans approximation.
+  Taille : ~100 MB (téléchargé automatiquement au 1er lancement)
+  Licence : CC-BY-NC 4.0
+
+─────────────────────────────────────────────────────────
+"""
