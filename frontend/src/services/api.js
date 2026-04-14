@@ -3,8 +3,10 @@ import axios from 'axios'
 const API = axios.create({ baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8000' })
 
 export const correcterMot    = (mot)    => API.post('/api/correct/mot', { mot })
+export const correcterMotDetail = (mot) => API.post('/api/correct/mot/detail', { mot })
 export const correcterTexte  = (texte)  => API.post('/api/correct/texte', { texte })
 export const lemmatiser      = (mot)    => API.post('/api/lemma', { mot })
+export const analyserMot    = (mot)    => API.post('/api/lemma/analyse', { mot })
 export const autocomplete    = (mot, n) => API.post('/api/complete', { mot, n })
 export const analyserSentiment = (texte) => API.post('/api/sentiment', { texte })
 export const traduire        = (mot)    => API.post('/api/translate', { mot })

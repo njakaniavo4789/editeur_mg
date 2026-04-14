@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { analyserSentiment, genererAudio, autocomplete, chatbot } from "../services/api";
+import { analyserSentiment, genererAudio, autocomplete, chatbot, correcterMotDetail, analyserMot, traduire } from "../services/api";
 
 // ─── Quill loader ─────────────────────────────────────────────────────────────
 function useQuill(containerRef) {
@@ -110,6 +110,8 @@ const ICONS = {
   lightbulb: "M15 14c.2-1 .2-2 0-3-.2-1-.6-1.8-1-2.5C13.2 7.2 12 7 12 7s-1.2.2-1.2.2H9c-.6 0-1-.2-1-.6 0-.4.2-.6.6-.8.3-.2.7-.4 1.2-.4h2.2c.5 0 .9.2 1.2.4.4.2.6.4.6.8 0 .4-.2.6-.6.8H11c-.2 0-.4.2-.4.6 0 .4.2.6.4.8h2.6c.2 0 .4-.2.4-.6 0-.4-.2-.6-.4-.8h-1c-.1 0-.3.1-.4.2-.1.1-.2.3-.2.6 0 .3.1.5.2.6.1.1.3.2.6.2.3 0 .5-.1.7-.4.4-.3.7-.7.7-1.3 0-.2-.1-.4-.3-.5-.6-.1-.2-.1-.4-.2-.6-.1-.3-.1-.5-.2-.7-.1-.4-.1-.6-.2-.8-.1-.3-.1-.5-.2-.7-.1-.4-.1-.6-.2-.8-.1",
   star:     "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
   translate: "M3 5h12M3 12h18M3 19h12M12 2a2 2 0 0 1 2 2 2 2 0 0 1-2 2H7a2 2 0 0 1-2-2 2 2 0 0 1 2-2h5zm7 15H7a2 2 0 0 1-2-2 2 2 0 0 1 2-2h5zm7-8H7a2 2 0 0 1-2-2 2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 1-2 2z",
+  check:    "M20 6L9 17l-5-5",
+  search:   "M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z",
 };
 
 const Ico = ({ n, s = 16, color }) => (
@@ -118,6 +120,183 @@ const Ico = ({ n, s = 16, color }) => (
     <path d={ICONS[n]} />
   </svg>
 );
+
+// ─── Correction Panel (Backend API) ───────────────────────────────────────────────────
+function CorrectionPanel({ getText, onClose }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    const text = getText().trim();
+    if (!text) { setResult(null); return; }
+    setLoading(true);
+    const mots = text.split(/\s+/).filter(m => m.length > 2);
+    if (mots.length === 0) { setLoading(false); return; }
+    
+    correcterMotDetail(mots[0])
+      .then(res => setResult(res.data))
+      .catch(() => setResult({ error: "Nisy olana" }))
+      .finally(() => setLoading(false));
+  }, [getText]);
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#0d1626", borderLeft:`1px solid #1e2d42`, animation:"slideIn .22s ease" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:`1px solid #1e2d42`, flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+          <div style={{ width:30, height:30, borderRadius:9, background:"linear-gradient(135deg,#10b981,#059669)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <Ico n="check" s={14} color="#fff" />
+          </div>
+          <span style={{ fontWeight:700, fontSize:13, color:"#e2e8f0", fontFamily:"'Playfair Display',serif" }}>Fanitsiana</span>
+        </div>
+        <button onClick={onClose} style={{ background:"#131f35", border:"none", borderRadius:7, width:26, height:26, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#94a3b8" }}>
+          <Ico n="close" s={12} />
+        </button>
+      </div>
+      <div style={{ flex:1, padding:16, overflowY:"auto" }}>
+        {loading && <div style={{ display:"flex", alignItems:"center", gap:8, padding:12, background:"#131f35", borderRadius:10 }}>
+          <div style={{ width:16, height:16, borderRadius:"50%", border:"2px solid #10b981", borderTopColor:"transparent", animation:"spin 0.75s linear infinite" }} />
+          <span style={{ fontSize:12, color:"#94a3b8" }}>Fanadihana...</span>
+        </div>}
+        {result && !result.correct && result.suggestions && (
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            <div style={{ fontSize:12, color:"#94a3b8" }}>Teny: <strong style={{color:"#e2e8f0"}}>{result.mot}</strong></div>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              {result.suggestions.slice(0,5).map((s, i) => (
+                <div key={i} style={{ padding:"10px 12px", background:"#131f35", borderRadius:8, border:`1px solid #1e2d42`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <span style={{ fontSize:13, color:"#e2e8f0", fontWeight:500 }}>{s.mot || s}</span>
+                  <span style={{ fontSize:11, color:"#10b981" }}>{s.score || ""}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {result && result.correct && (
+          <div style={{ padding:16, background:"#131f35", borderRadius:12, border:`1px solid #10b981` }}>
+            <span style={{ fontSize:14, color:"#10b981" }}>✓ Marina ny teny "{result.mot}"</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Lemma Panel (Backend API) ───────────────────────────────────────────────────
+function LemmaPanel({ getText, onClose }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    const text = getText().trim();
+    if (!text) { setResult(null); return; }
+    setLoading(true);
+    const mots = text.split(/\s+/).filter(m => m.length > 2);
+    if (mots.length === 0) { setLoading(false); return; }
+    
+    analyserMot(mots[0])
+      .then(res => setResult(res.data))
+      .catch(() => setResult({ error: "Nisy olana" }))
+      .finally(() => setLoading(false));
+  }, [getText]);
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#0d1626", borderLeft:`1px solid #1e2d42`, animation:"slideIn .22s ease" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:`1px solid #1e2d42`, flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+          <div style={{ width:30, height:30, borderRadius:9, background:"linear-gradient(135deg,#8b5cf6,#7c3aed)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <Ico n="book" s={14} color="#fff" />
+          </div>
+          <span style={{ fontWeight:700, fontSize:13, color:"#e2e8f0", fontFamily:"'Playfair Display',serif" }}>Lematisera</span>
+        </div>
+        <button onClick={onClose} style={{ background:"#131f35", border:"none", borderRadius:7, width:26, height:26, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#94a3b8" }}>
+          <Ico n="close" s={12} />
+        </button>
+      </div>
+      <div style={{ flex:1, padding:16, overflowY:"auto" }}>
+        {loading && <div style={{ display:"flex", alignItems:"center", gap:8, padding:12, background:"#131f35", borderRadius:10 }}>
+          <div style={{ width:16, height:16, borderRadius:"50%", border:"2px solid #8b5cf6", borderTopColor:"transparent", animation:"spin 0.75s linear infinite" }} />
+          <span style={{ fontSize:12, color:"#94a3b8" }}>Fanadihana...</span>
+        </div>}
+        {result && (
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <div style={{ fontSize:14, color:"#e2e8f0", fontWeight:600 }}>{result.mot}</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              <div style={{ padding:10, background:"#131f35", borderRadius:8 }}>
+                <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Prefiksa</div>
+                <div style={{ fontSize:13, color:"#8b5cf6" }}>{result.prefixe || "-"}</div>
+              </div>
+              <div style={{ padding:10, background:"#131f35", borderRadius:8 }}>
+                <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Infiksa</div>
+                <div style={{ fontSize:13, color:"#8b5cf6" }}>{result.infixe || "-"}</div>
+              </div>
+              <div style={{ padding:10, background:"#131f35", borderRadius:8 }}>
+                <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Sufiksa</div>
+                <div style={{ fontSize:13, color:"#8b5cf6" }}>{result.suffixe || "-"}</div>
+              </div>
+              <div style={{ padding:10, background:"#131f35", borderRadius:8 }}>
+                <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Racina</div>
+                <div style={{ fontSize:13, color:"#10b981" }}>{result.lemme || "-"}</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Translate Panel (Backend API) ───────────────────────────────────────────────────
+function TranslatePanel({ getText, onClose }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    const text = getText().trim();
+    if (!text) { setResult(null); return; }
+    setLoading(true);
+    const mots = text.split(/\s+/).filter(m => m.length > 2);
+    if (mots.length === 0) { setLoading(false); return; }
+    
+    traduire(mots[0])
+      .then(res => setResult(res.data))
+      .catch(() => setResult({ error: "Nisy olana" }))
+      .finally(() => setLoading(false));
+  }, [getText]);
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#0d1626", borderLeft:`1px solid #1e2d42`, animation:"slideIn .22s ease" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:`1px solid #1e2d42`, flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+          <div style={{ width:30, height:30, borderRadius:9, background:"linear-gradient(135deg,#f59e0b,#d97706)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <Ico n="translate" s={14} color="#fff" />
+          </div>
+          <span style={{ fontWeight:700, fontSize:13, color:"#e2e8f0", fontFamily:"'Playfair Display',serif" }}>Fandikana</span>
+        </div>
+        <button onClick={onClose} style={{ background:"#131f35", border:"none", borderRadius:7, width:26, height:26, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#94a3b8" }}>
+          <Ico n="close" s={12} />
+        </button>
+      </div>
+      <div style={{ flex:1, padding:16, overflowY:"auto" }}>
+        {loading && <div style={{ display:"flex", alignItems:"center", gap:8, padding:12, background:"#131f35", borderRadius:10 }}>
+          <div style={{ width:16, height:16, borderRadius:"50%", border:"2px solid #f59e0b", borderTopColor:"transparent", animation:"spin 0.75s linear infinite" }} />
+          <span style={{ fontSize:12, color:"#94a3b8" }}>Fanadihana...</span>
+        </div>}
+        {result && (
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <div style={{ padding:12, background:"#131f35", borderRadius:10 }}>
+              <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>MALAGASY</div>
+              <div style={{ fontSize:14, color:"#e2e8f0" }}>{result.mot}</div>
+            </div>
+            <div style={{ fontSize:18, color:"#64748b", textAlign:"center" }}>⬇</div>
+            <div style={{ padding:12, background:"#131f35", borderRadius:10, border:`1px solid #f59e0b` }}>
+              <div style={{ fontSize:10, color:"#f59e0b", marginBottom:4 }}>FRANÇAIS</div>
+              <div style={{ fontSize:16, color:"#f59e0b", fontWeight:600 }}>{result.traduction}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ─── Synthèse Vocale Panel (Backend TTS) ───────────────────────────────────────────────────
 function SyntheseVocalePanel({ onClose, getText }) {
@@ -517,9 +696,12 @@ function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTi
   };
 
   const NAV = [
-    { id: "sentiment", icon: "smile", label: "Toetran-dahatsoratra", color: "#8b5cf6" },
+    { id: "correction", icon: "check", label: "Fanitsiana", color: "#10b981" },
+    { id: "lemma", icon: "book", label: "Lematisera", color: "#8b5cf6" },
+    { id: "translate", icon: "translate", label: "Fandikana", color: "#f59e0b" },
+    { id: "sentiment", icon: "smile", label: "Toetran-dahatsoratra", color: "#ec4899" },
     { id: "chatbot", icon: "bot", label: "Mpanolo-tsaina", color: "#06b6d4" },
-    { id: "synthese", icon: "mic", label: "Famakian-teny", color: "#f59e0b" },
+    { id: "synthese", icon: "mic", label: "Famakian-teny", color: "#ef4444" },
   ];
 
   return (
@@ -781,6 +963,27 @@ export default function App() {
       {/* SENTIMENT MODAL */}
       {active === "sentiment" && (
         <SentimentModal getText={getText} onClose={() => setActive(null)} />
+      )}
+
+      {/* CORRECTION PANEL */}
+      {active === "correction" && (
+        <div style={{ width: 300, flexShrink: 0 }}>
+          <CorrectionPanel getText={getText} onClose={() => setActive(null)} />
+        </div>
+      )}
+
+      {/* LEMMA PANEL */}
+      {active === "lemma" && (
+        <div style={{ width: 300, flexShrink: 0 }}>
+          <LemmaPanel getText={getText} onClose={() => setActive(null)} />
+        </div>
+      )}
+
+      {/* TRANSLATE PANEL */}
+      {active === "translate" && (
+        <div style={{ width: 300, flexShrink: 0 }}>
+          <TranslatePanel getText={getText} onClose={() => setActive(null)} />
+        </div>
       )}
     </div>
   );
