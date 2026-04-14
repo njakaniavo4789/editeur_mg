@@ -9,4 +9,4 @@ class MotRequest(BaseModel):
 
 @router.post("/lemma")
 def lemma(req: MotRequest):
-    return {"mot": req.mot, "racine": lemmatiser(req.mot)}
+    return {"mot": req.mot, "lemme": lemmatiser(req.mot)}

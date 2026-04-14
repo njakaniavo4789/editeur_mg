@@ -8,10 +8,26 @@ const TYPE_COLORS = {
   LOC:  '#10b981',
   DATE: '#3b82f6',
   MISC: '#8b5cf6',
+  VILLE:     '#10b981',
+  PERSONNE:  '#6366f1',
+}
+
+const TYPE_LABELS = {
+  VILLE:     'Lieu',
+  PERSONNE:  'Personne',
+  PER:       'Personne',
+  ORG:       'Organisation',
+  LOC:       'Lieu',
+  DATE:      'Date',
+  MISC:      'Autre',
 }
 
 function getColor(type) {
   return TYPE_COLORS[type?.toUpperCase()] || '#64748b'
+}
+
+function getLabel(type) {
+  return TYPE_LABELS[type?.toUpperCase()] || type || 'Autre'
 }
 
 export default function PanelNER() {
@@ -61,7 +77,7 @@ export default function PanelNER() {
                     className="ner-tag"
                     style={{ background: color + '22', color, borderColor: color }}
                   >
-                    {type}
+                    {getLabel(type)}
                   </span>
                 </div>
               )

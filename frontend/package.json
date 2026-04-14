@@ -9,11 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
     "axios": "^1.15.0",
     "quill": "^2.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "rollup": "^4.60.1",
+    "tailwindcss": "^4.2.2",
     "zustand": "^4.5.2"
   },
   "devDependencies": {

@@ -1,31 +1,8 @@
 import React from 'react'
-import EditorCore from './components/Editor/EditorCore'
-import Toolbar from './components/Editor/Toolbar'
-import PanelCorrecteur from './components/Panels/PanelCorrecteur'
-import PanelSentiment from './components/Panels/PanelSentiment'
-import PanelNER from './components/Panels/PanelNER'
-import PanelChatbot from './components/Panels/PanelChatbot'
-import TTSPlayer from './components/TTS/TTSPlayer'
-import './index.css'
+import Home from './home/Home'
 
 function App() {
-  return (
-    <div className="app-container">
-      <div className="main-layout">
-        <div className="editor-section">
-          <Toolbar />
-          <EditorCore />
-          <TTSPlayer />
-        </div>
-        <div className="panels-section">
-          <PanelCorrecteur />
-          <PanelSentiment />
-          <PanelNER />
-          <PanelChatbot />
-        </div>
-      </div>
-    </div>
-  )
+  return <Home />
 }
 
 export default App

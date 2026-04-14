@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { analyserSentiment, genererAudio, autocomplete } from "../services/api";
 
 // ─── Quill loader ─────────────────────────────────────────────────────────────
 function useQuill(containerRef) {
   const quillRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
+  const [sentiment, setSentiment] = useState(null);
+  const [sentimentLoading, setSentimentLoading] = useState(false);
+  const [textVersion, setTextVersion] = useState(0);
 
   useEffect(() => {
     if (quillRef.current) return;
@@ -27,6 +31,7 @@ function useQuill(containerRef) {
       // Écouter les changements dans l'éditeur
       quillRef.current.on('text-change', () => {
         setIsWriting(true);
+        setTextVersion(v => v + 1);
       });
 
       setReady(true);
@@ -40,7 +45,52 @@ function useQuill(containerRef) {
     if (quillRef.current) localStorage.setItem("scriptura_content", quillRef.current.root.innerHTML);
   }, []);
 
-  return { getText, reset, save, ready, isWriting, setIsWriting };
+  // Detecter automatiquement le sentiment quand le texte change
+  const detectSentiment = useCallback(async (text) => {
+    if (!text || text.trim().length < 3) {
+      setSentiment(null);
+      return;
+    }
+    setSentimentLoading(true);
+    try {
+      const res = await analyserSentiment(text.trim());
+      console.log("API OK:", res.data);
+      const data = res.data;
+      
+      // Handle response: {resultat: {label: "NEUTRE", score: 0}} or {resultat: "NEUTRE"}
+      let label = "Neutral";
+      let score = 0.5;
+      
+      if (typeof data.resultat === 'string') {
+        label = data.resultat;
+        score = data.score || 0.5;
+      } else if (data.resultat && data.resultat.label) {
+        label = data.resultat.label;
+        score = data.resultat.score || 0.5;
+      }
+      
+      // Normalize label
+      label = label.toUpperCase();
+      if (label === "POSITIF" || label === "POSITIVE") label = "Positive";
+      else if (label === "NEGATIF" || label === "NEGATIVE") label = "Negative";
+      else if (label === "NEUTRE" || label === "NEUTRAL") label = "Neutral";
+      else if (label === "MIXTE" || label === "MIXED") label = "Mixed";
+      
+      console.log("Setting sentiment:", label, score);
+      setSentiment({
+        resultat: label,
+        score: score,
+        resume: data.resume || ""
+      });
+    } catch (err) {
+      console.error("Sentiment error:", err);
+      setSentiment(null);
+    } finally {
+      setSentimentLoading(false);
+    }
+  }, []);
+
+  return { getText, reset, save, ready, isWriting, setIsWriting, sentiment, setSentiment, sentimentLoading, detectSentiment, textVersion };
 }
 
 // ─── Claude API ───────────────────────────────────────────────────────────────
@@ -80,20 +130,52 @@ const Ico = ({ n, s = 16, color }) => (
   </svg>
 );
 
-// ─── Synthèse Vocale Panel ────────────────────────────────────────────────────────────
-function SyntheseVocalePanel({ onClose }) {
+// ─── Synthèse Vocale Panel (Backend TTS) ───────────────────────────────────────────────────
+function SyntheseVocalePanel({ onClose, getText }) {
   const [isListening, setIsListening] = useState(false);
   const [text, setText] = useState("");
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const audioRef = useRef(null);
 
   const startListening = () => {
     setIsListening(true);
-    setText("Mandeha ny fanoratra feo...");
-    // Logique de reconnaissance vocale à implémenter ici
   };
 
   const stopListening = () => {
     setIsListening(false);
-    setText("Feo voatahiry.");
+  };
+
+  const playAudio = async () => {
+    const txt = getText().trim();
+    if (!txt) {
+      setText("Tsy misy teny hovaina.");
+      return;
+    }
+    setLoading(true);
+    setText("Mamorona audio...");
+    
+    // Stop previous audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    try {
+      const res = await genererAudio(txt);
+      const url = URL.createObjectURL(res.data);
+      setAudioUrl(url);
+      setText("Mivantana andeha...");
+      
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.play();
+    } catch (err) {
+      console.error("TTS error:", err);
+      setText("Nisy olana teo amin'ny famokarana audio.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -111,20 +193,21 @@ function SyntheseVocalePanel({ onClose }) {
       </div>
       <div style={{ flex:1, padding:20, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:20 }}>
         <button
-          onClick={isListening ? stopListening : startListening}
+          onClick={isListening ? stopListening : playAudio}
+          disabled={loading}
           style={{
-            width:120, height:120, borderRadius:"50%", border:"none", cursor:"pointer",
-            background: isListening ? "#f43f5e" : "linear-gradient(135deg,#3b82f6,#1d4ed8)",
+            width:120, height:120, borderRadius:"50%", border:"none", cursor: loading ? "not-allowed" : "pointer",
+            background: loading ? "#475569" : isListening ? "#f43f5e" : "linear-gradient(135deg,#3b82f6,#1d4ed8)",
             display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.2)",
-            transition:"all .2s"
+            transition:"all .2s", opacity: loading ? 0.6 : 1
           }}
-          onMouseEnter={e=>e.currentTarget.style.transform="scale(1.05)"}
+          onMouseEnter={e=>!loading && (e.currentTarget.style.transform="scale(1.05)")}
           onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}
         >
           <Ico n="mic" s={32} color="#fff" />
         </button>
         <p style={{ color:"#94a3b8", fontSize:12, textAlign:"center", fontFamily:"'DM Sans',sans-serif" }}>
-          {isListening ? "Mandeha ny fanoratra feo..." : "Tsindrio mba handeha ny fanoratra feo"}
+          {loading ? "Mamorona audio..." : isListening ? "Mandeha ny fanoratra feo..." : "Tsindrio mba hovaina ny lahatsoratra"}
         </p>
         {text && (
           <div style={{ background:"#131f35", borderRadius:12, padding:16, width:"100%", maxWidth:300 }}>
@@ -136,7 +219,7 @@ function SyntheseVocalePanel({ onClose }) {
   );
 }
 
-// ─── Sentiment Modal ──────────────────────────────────────────────────────────
+// ─── Sentiment Modal (Backend API) ──────────────────────────────────────────────────────
 function SentimentModal({ getText, onClose }) {
   const [phase, setPhase] = useState("loading");
   const [result, setResult] = useState(null);
@@ -149,16 +232,41 @@ function SentimentModal({ getText, onClose }) {
         setPhase("done"); return;
       }
       try {
-        const raw = await callClaude(
-          [{ role: "user", content: `Analyze the sentiment of this text:\n"${text.slice(0, 3000)}"` }],
-          `You are a sentiment analysis engine. Reply ONLY with valid JSON (no markdown):
-{"label":"Positive"|"Negative"|"Neutral"|"Mixed","score":0.0-1.0,"emoji":"🟢"|"🔴"|"⚪"|"🟡","summary":"one sentence","highlights":["phrase1","phrase2","phrase3"]}`
-        );
-        setResult(JSON.parse(raw.replace(/```json|```/g, "").trim()));
-      } catch { setResult({ error: "Nisy olana ny fanadihana. Avereno indray." }); }
+        const res = await analyserSentiment(text);
+        const data = res.data;
+        // Handle response: {resultat: {label: "NEUTRE", score: 0}} or {resultat: "NEUTRE"}
+        let label = "Neutral";
+        let score = 0.5;
+        
+        if (typeof data.resultat === 'string') {
+          label = data.resultat;
+          score = data.score || 0.5;
+        } else if (data.resultat && data.resultat.label) {
+          label = data.resultat.label;
+          score = data.resultat.score || 0.5;
+        }
+        
+        // Normalize label
+        label = label.toUpperCase();
+        if (label === "POSITIF" || label === "POSITIVE") label = "Positive";
+        else if (label === "NEGATIF" || label === "NEGATIVE") label = "Negative";
+        else if (label === "NEUTRE" || label === "NEUTRAL") label = "Neutral";
+        else if (label === "MIXTE" || label === "MIXED") label = "Mixed";
+        
+        const emoji = label === "Positive" ? "🟢" : label === "Negative" ? "🔴" : label === "Mixed" ? "🟡" : "⚪";
+        setResult({
+          label,
+          score,
+          emoji,
+          summary: data.resume || "Fanazavana ofy.",
+          highlights: data.mots_positifs?.slice(0, 3) || []
+        });
+      } catch { 
+        setResult({ error: "Nisy olana ny fanadihana. Avereno indray." }); 
+      }
       setPhase("done");
     })();
-  }, []);
+  }, [getText]);
 
   const PAL = {
     Positive: { a: "#10b981", bg: "rgba(16,185,129,0.1)"  },
@@ -166,7 +274,7 @@ function SentimentModal({ getText, onClose }) {
     Neutral:  { a: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
     Mixed:    { a: "#f59e0b", bg: "rgba(245,158,11,0.1)"  },
   };
-  const p = result?.label ? PAL[result.label] : PAL.Neutral;
+  const p = result?.label ? PAL[result.label] || PAL.Neutral : PAL.Neutral;
 
   return (
     <div style={{ position:"fixed", inset:0, zIndex:99, display:"flex", alignItems:"center", justifyContent:"center", padding:24, background:"rgba(0,0,0,0.75)", backdropFilter:"blur(12px)" }}>
@@ -305,26 +413,40 @@ function ChatbotPanel({ getText, onClose }) {
   );
 }
 
-// ─── Suggestions Panel ────────────────────────────────────────────────────────────
+// ─── Suggestions Panel (Backend Autocomplete) ─────────────────────────────────────
 function SuggestionsPanel({ getText, isWriting }) {
-  const [suggestions, setSuggestions] = useState([
-    { word: "fahitana", definition: "Fahitana dia zava azo jerena amin'ny maso, na azo fantarina amin'ny saina." },
-    { word: "fahafahana", definition: "Toetra na hery azo ampiasaina hanatanteraka zava iray." },
-    { word: "fahatsiarovana", definition: "Fahatsiarovana na fahafantarana indray zava efa nisy taloha." },
-    { word: "fahasembana", definition: "Toetra manondro ny fahafaham-po na ny fahafinaretana." },
-    { word: "fahamendrehana", definition: "Fahamendrehana dia toetra manondro ny fahafahana manao zava tsara sy marina." },
-    { word: "fahazavana", definition: "Fahazavana dia toetra manondro ny fahafinaretana na ny fahasahiana." },
-  ]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // Mise à jour dynamique des suggestions en fonction du texte
   useEffect(() => {
     const text = getText().toLowerCase();
-    if (text.includes("fahitana")) {
-      setSuggestions(prev => prev.map(s =>
-        s.word === "fahitana" ? { ...s, definition: "Fahitana dia zava azo fantarina amin'ny alalan'ny maso na ny saina." } : s
-      ));
+    const words = text.split(/\s+/);
+    const lastWord = words[words.length - 1];
+    
+    if (lastWord && lastWord.length >= 2) {
+      setLoading(true);
+      autocomplete(lastWord, 6)
+        .then(res => {
+          const mots = res.data.suggestions || [];
+          const defs = {
+            "fahitana": "Fahitana dia zava azo jerena amin'ny maso, na azo fantarina amin'ny saina.",
+            "fahafahana": "Toetra na hery azo ampiasaina hanatanteraka zava iray.",
+            "fahatsiarovana": "Fahatsiarovana na fahafantarana indray zava efa nisy taloha.",
+            "fahasembana": "Toetra manondro ny fahafaham-po na ny fahafinaretana.",
+            "fahamendrehana": "Fahamendrehana dia toetra manondro ny fahafahana manao zava tsara sy marina.",
+            "fahazavana": "Fahazavana dia toetra manondro ny fahafinaretana na ny fahasahiana.",
+          };
+          setSuggestions(mots.map(mot => ({
+            word: mot,
+            definition: defs[mot] || "Tsy hita famaritana."
+          })));
+        })
+        .catch(() => setSuggestions([]))
+        .finally(() => setLoading(false));
+    } else {
+      setSuggestions([]);
     }
-  }, [getText]);
+  }, [getText, isWriting]);
 
   if (!isWriting) return null;
 
@@ -386,7 +508,7 @@ function SuggestionsPanel({ getText, isWriting }) {
 }
 
 // ─── Left Sidebar ─────────────────────────────────────────────────────────────
-function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTitle, author, onPublish }) {
+function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTitle, author, onPublish, sentiment, sentimentLoading }) {
   const [editTitle, setEditTitle] = useState(false);
 
   const bg = "#080e1c";
@@ -394,6 +516,20 @@ function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTi
   const mute = "#3d5068";
   const txt = "#dde4f0";
   const surf = "#0d1828";
+
+  const getSentimentEmoji = (resultat) => {
+    if (resultat === "Positive") return "🟢";
+    if (resultat === "Negative") return "🔴";
+    if (resultat === "Mixed") return "🟡";
+    return "⚪";
+  };
+
+  const getSentimentColor = (resultat) => {
+    if (resultat === "Positive") return "#10b981";
+    if (resultat === "Negative") return "#f43f5e";
+    if (resultat === "Mixed") return "#f59e0b";
+    return "#94a3b8";
+  };
 
   const NAV = [
     { id: "sentiment", icon: "smile", label: "Toetran-dahatsoratra", color: "#8b5cf6" },
@@ -448,6 +584,31 @@ function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTi
           </div>
         </div>
       </div>
+
+      {/* Sentiment display (auto) */}
+      {(sentiment || sentimentLoading) && (
+        <div style={{ padding: "12px 8px", borderBottom: `1px solid ${bord}` }}>
+          <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: mute, padding: "0 8px", marginBottom: 8, textTransform: "uppercase", fontFamily: "'DM Sans',sans-serif" }}>Toetra</p>
+          {sentimentLoading ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: surf, borderRadius: 10 }}>
+              <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid #8b5cf6", borderTopColor: "transparent", animation: "spin 0.75s linear infinite" }} />
+              <span style={{ fontSize: 11, color: mute }}>Fanadihana...</span>
+            </div>
+          ) : sentiment && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: surf, borderRadius: 10, border: `1px solid ${getSentimentColor(sentiment.resultat)}30` }}>
+              <span style={{ fontSize: 16 }}>{getSentimentEmoji(sentiment.resultat)}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: getSentimentColor(sentiment.resultat) }}>
+                  {sentiment.resultat}
+                </div>
+                <div style={{ fontSize: 10, color: mute }}>
+                  {Math.round((sentiment.score || 0.5) * 100)}%
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Nav tools */}
       <div style={{ padding: "12px 8px 8px" }}>
@@ -525,7 +686,18 @@ export default function App() {
   const [docTitle, setDocTitle] = useState("Tantaran'ny X_AE_A-22, Loharano 2");
   const [author] = useState("X_AE_B-221");
   const quillRef = useRef(null);
-  const { getText, reset, save, isWriting, setIsWriting } = useQuill(quillRef);
+  const { getText, reset, save, isWriting, setIsWriting, sentiment, setSentiment, sentimentLoading, detectSentiment, textVersion } = useQuill(quillRef);
+
+  // Detecter automatiquement le sentiment quand le texte change
+  useEffect(() => {
+    const text = getText();
+    if (text && text.trim().length >= 3) {
+      const timeout = setTimeout(() => detectSentiment(text), 1500);
+      return () => clearTimeout(timeout);
+    } else {
+      setSentiment(null);
+    }
+  }, [textVersion]);
 
   const handleSave = useCallback(() => {
     save(); setSaved(true); setTimeout(() => setSaved(false), 2500);
@@ -593,6 +765,8 @@ export default function App() {
         setDocTitle={setDocTitle}
         author={author}
         onPublish={() => alert("🚀 Namerina ny lahatsoratrao!")}
+        sentiment={sentiment}
+        sentimentLoading={sentimentLoading}
       />
 
       {/* MAIN EDITOR */}
@@ -615,7 +789,7 @@ export default function App() {
 
       {active === "synthese" && (
         <div style={{ width: 300, flexShrink: 0 }}>
-          <SyntheseVocalePanel onClose={() => setActive(null)} />
+          <SyntheseVocalePanel onClose={() => setActive(null)} getText={getText} />
         </div>
       )}
 
