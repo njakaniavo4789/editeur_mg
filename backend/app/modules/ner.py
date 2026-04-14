@@ -7,15 +7,16 @@ def _charger_json(filename):
             return json.load(f)
     return []
 
-VILLES = set(_charger_json("villes_mg.json"))
-PERSONNES = set(_charger_json("noms_propres_mg.json"))
+VILLES    = set(v.lower() for v in _charger_json("villes_mg.json"))
+PERSONNES = set(p.lower() for p in _charger_json("noms_propres_mg.json"))
 
 def detecter_entites(texte: str):
     entites = []
     for mot in texte.split():
         mot_clean = mot.strip(".,!?;:")
-        if mot_clean in VILLES:
+        mot_lower = mot_clean.lower()
+        if mot_lower in VILLES:
             entites.append({"mot": mot_clean, "type": "VILLE"})
-        elif mot_clean in PERSONNES:
+        elif mot_lower in PERSONNES:
             entites.append({"mot": mot_clean, "type": "PERSONNE"})
     return entites
