@@ -100,4 +100,5 @@ Un éditeur de texte intelligent pour la langue malagasy doté de fonctionnalit�
 ## Vidéo de présentation
 
 [Voir la vidéo](https://drive.google.com/file/d/13_4-HVYdgCsw_HQSM8EOP7vNilxp5ZSh/view?usp=sharing)
+
 [Presentation final](https://drive.google.com/file/d/1bGXncuAOPnXggw1RUWA1lQa7GVNjGzLz/view?usp=sharing)
