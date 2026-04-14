@@ -1,203 +1,96 @@
-# Mpanoratra Malagasy AI — Éditeur de Texte Augmenté par l'IA
+# Scriptura — Éditeur de Texte Malagasy Augmenté par l'IA
 
 TP Machine Learning — ISPM M2 S1
 
 ---
 
-## Table des matières
+## Qu'est-ce que c'est ?
 
-1. [Fonctionnalités IA](#fonctionnalités-ia)
-2. [Scraping — tenymalagasy.org avec triage](#scraping--tenymalagasyorg-avec-triage)
-3. [Scraping — mg.wikipedia.org par thèmes](#scraping--mgwikipediaorg-par-thèmes)
-4. [Vérification à base de règles (Regex)](#vérification-à-base-de-règles-regex)
-5. [Correction orthographique — Levenshtein & Hash](#correction-orthographique--levenshtein--tables-de-hachage)
-6. [Lemmatisation](#lemmatisation)
-7. [Autocomplétion — Modèle de Markov Bigramme](#autocompletion--modèle-de-markov-bigramme)
-8. [Modèle bigramme pré-entraîné & probabilités](#modèle-bigramme-pré-entraîné--probabilités)
-9. [Analyse de sentiments](#analyse-de-sentiments)
-10. [Interface utilisateur](#interface-utilisateur)
-11. [Installation rapide](#installation-rapide)
-12. [Bibliographie](#bibliographie)
-13. [Membres du groupe](#membres-du-groupe)
+Un éditeur de texte intelligent pour la langue malagasy doté de fonctionnalités IA avancées :
 
----
-
-## Fonctionnalités IA
-
-| Module | Technologie |
-|--------|-------------|
-| Correcteur orthographique | Levenshtein + tables de hachage |
-| Vérification phonotactique | Regex |
-| Lemmatisation | Règles préfixes / suffixes |
-| Autocomplétion | Modèle de Markov bigramme |
-| Traducteur | LibreTranslate + Helsinki-NLP |
-| Analyse de sentiment | Bag of Words + RoBERTa MG |
-| Synthèse vocale | edge-tts (mg-MG-VahinyNeural) |
-| Reconnaissance d'entités | NER (villes + noms propres MG) |
-| Chatbot assistant | LangChain + Flowise |
+| Fonctionnalité | Description |
+|----------------|-------------|
+| ✏️ **Correction orthographique** | Détection d'erreurs avec suggestions (Fuzzy matching Levenshtein) |
+| 🔤 **Lemmatisation** | Analyse morphologique (préfixes/suffixes) |
+| 💡 **Autocomplétion** | Prédiction du mot suivant (Markov Bigramme) |
+| 😊 **Analyse de sentiments** | Détection POSITIF/NEGATIF/NEUTRE |
+| 🗣️ **Synthèse vocale (TTS)** | Conversion texte → audio (facebook/mms-tts-mlg) |
+| 🤖 **Chatbot assistant** | Assistant IA basé sur Gemini |
+| 🌐 **Traduction** | Dictionnaire MG → FR |
+| 🏷️ **NER** | Reconnaissance d'entités nommées (villes, personnes) |
 
 ---
 
-## Scraping — tenymalagasy.org avec triage
+## Tester maintenant
 
-### Contexte & rôle dans le projet
-
-Pour alimenter les modules de **lemmatisation**, de **correction orthographique** et d'**autocomplétion**, nous avons eu besoin d'un dictionnaire structuré de la langue malagasy. Plutôt que de le construire manuellement, nous avons utilisé **n8n** — un outil d'automatisation open-source — pour scraper automatiquement le site [tenymalagasy.org](https://tenymalagasy.org).
-
-Le workflow n8n parcourt les 20 lettres disponibles (A, B, D … Z), extrait pour chacune tous les **fototeny** (mots racines), leurs **sampateny** (mots dérivés) ainsi que la **lettre** d'appartenance, puis exporte le tout dans un fichier **CSV trié alphabétiquement**.
-
-Ce fichier CSV est sauvegardé dans le dossier **`data_raw/`** du projet :
-
-```
-data_raw/
-└── fototeny_sampateny_lettre.csv    ← généré par n8n, colonnes : lettre | fototeny | sampateny
-```
-
-Il est ensuite utilisé directement par plusieurs modules :
-
-| Module | Utilisation du CSV |
-|--------|--------------------|
-| **Lemmatisation** | Liste des fototeny comme référence de racines valides |
-| **Correcteur orthographique** | Construction de la table de hachage + index de suggestions |
-| **Vérification Regex** | Validation des terminaisons et préfixes connus |
-| **Autocomplétion N-gram** | Enrichissement du vocabulaire du corpus d'entraînement |
-
-### Objectif
-Récupérer tous les **fototeny** (mots racines) et leurs **sampateny** (mots dérivés)
-pour les 20 lettres disponibles, avec un **triage automatique** par lettre dans un
-fichier CSV unique.
-
-### Workflow n8n
-
-```
-[Manual Trigger]
-      ↓
-[Code — Générer lettres]      → 20 items { lettre, param }
-      ↓
-[HTTP Request]                → GET /bins/rootLists?o=let{x}
-      ↓
-[Code — Extraction + Triage]  → parse table.menuLink, split <tr>
-      ↓
-[Google Sheets — Append]      → une ligne par fototeny
-```
-
-### Schéma CSV final (trié)
-
-```
-lettre | fototeny  | sampateny
--------|-----------|--------------------------------------
-A      | ady       | fifadian-kanina, miady, voady
-A      | afo       | afobe, mampiafo, voafo
-B      | ba        | fiba, mibà, mpiba
-B      | baba      | mibaba
-...
-Z      | zara      | mizara, zaraina, fizarana
-```
+1. Ouvrez : **https://whimsical-crisp-bb4e10.netlify.app/**
+2. Tapez du texte en malagasy
+3. Les fonctionnalités IA s'activent automatiquement !
 
 ---
 
-## Scraping — mg.wikipedia.org par thèmes
-
-### Thèmes ciblés
-
-| Thème Wikipedia MG | URL |
-|--------------------|-----|
-| Madagasikara | `https://mg.wikipedia.org/wiki/Madagasikara` |
-| Tantara | `https://mg.wikipedia.org/wiki/Tantara` |
-| Politika | `https://mg.wikipedia.org/wiki/Politika` |
-| Tontolo iainana | `https://mg.wikipedia.org/wiki/Tontolo_iainana` |
-
-## Correction orthographique — Levenshtein & Tables de hachage
-
-### Approche hybride
+## Architecture
 
 ```
-Mot saisi
-   ↓
-[Table de hachage]   →  correspondance exacte ?  →  OUI → retourner le mot
-   ↓ NON
-[Index par préfixe]  →  filtrer candidats (même 2 premières lettres)
-   ↓
-[Distance Levenshtein]  →  top-5 suggestions triées par score
+┌─────────────────┐         ┌─────────────────────┐
+│   Netlify        │  HTTPS   │   Google Colab      │
+│  (Frontend)      │────────▶│   (Backend API)     │
+│  https://...    │   API   │   + ngrok tunnel    │
+└─────────────────┘         └─────────────────────┘
 ```
 
-### Flux de données temps réel
-
-```
-Utilisateur tape un mot
-        ↓  POST /api/correct   (debounce 300ms)
-        →  Suggestions Levenshtein dans la sidebar
-
-Utilisateur appuie sur Espace
-        ↓  POST /api/complete  { "mot": "dernier_mot" }
-        →  Dropdown : ny (8.4%) · fanahy (6.3%) · fiainana (5.9%)
-
-Bouton "Analyser" cliqué
-        ↓  POST /api/sentiment { "texte": "..." }
-        →  Jauge POSITIF 94.2%
-```
-
-### Aperçu
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  [Correcteur ✓]  [TTS ▶]  [Traduire ⇄]  [Analyser ☺]          │
-├──────────────────────────────────────┬──────────────────────────┤
-│                                      │  CORRECTEUR              │
-│  Ny fiainan'ny Malagasy dia tsara    │  mibaly → mibaby  (91%) │
-│  be. Mibaby ny ankizy ary mifalia|   │  mibika → mibika  (83%) │
-│                                      │                          │
-│  [ ny     (23.4%) ]                  │  SENTIMENT               │
-│  [ izy    (18.2%) ]                  │  ██████████░░ POSITIF    │
-│  [ ireo    (9.1%) ]                  │         94.2%            │
-└──────────────────────────────────────┴──────────────────────────┘
-```
+- **Frontend** : Hébergé sur Netlify (React/Vite)
+- **Backend** : API Python FastAPI sur Google Colab avec ngrok
 
 ---
 
-## Installation rapide
+## API Endpoints
 
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-
-# Frontend
-cd frontend
-npm install
-npm run dev
-
-# Docker (tout-en-un)
-docker-compose up --build
-# Backend  → http://localhost:8000
-# Frontend → http://localhost:3000
-# API docs → http://localhost:8000/docs
-```
+| Route | Méthode | Description |
+|------|---------|-------------|
+| `/api/correct/mot` | POST | Correction orthographique |
+| `/api/correct/texte` | POST | Correction d'un texte complet |
+| `/api/lemma` | POST | Lemmatisation d'un mot |
+| `/api/lemma/analyse` | POST | Analyse morphologique |
+| `/api/complete` | POST | Autocomplétion |
+| `/api/sentiment` | POST | Analyse de sentiments |
+| `/api/translate` | POST | Traduction MG → FR |
+| `/api/tts` | POST | Synthèse vocale |
+| `/api/ner` | POST | Reconnaissance d'entités |
+| `/api/chat` | POST | Chatbot Gemini |
 
 ---
 
-## Bibliographie
+## Technologies utilisées
 
-- [tenymalagasy.org](https://tenymalagasy.org) — Dictionnaire & fototeny
-- [mg.wikipedia.org](https://mg.wikipedia.org) — Corpus thématique malagasy
-- [HuggingFace — malagasy-nlp/roberta-base-mg](https://huggingface.co/malagasy-nlp/roberta-base-mg)
-- [Helsinki-NLP/opus-mt-mg-en](https://huggingface.co/Helsinki-NLP/opus-mt-mg-en)
-- [LibreTranslate](https://libretranslate.com)
-- [edge-tts](https://github.com/rany2/edge-tts)
-- [rapidfuzz](https://github.com/maxbachmann/RapidFuzz)
+### Frontend
+- React 18 + Vite
+- Quill Editor
+- TailwindCSS
+- Zustand (state management)
+- Axios
+
+### Backend
+- FastAPI (Python)
+- RapidFuzz (correction orthographique)
+- Transformers (TTS MMS)
+- Google Generative AI (Gemini chatbot)
 
 ---
 
 ## Membres du groupe
 
-| Membre | Rôle |
-|--------|------|
-| [RatsirofoFenosoa-Git](https://github.com/RatsirofoFenosoa-Git) | Backend NLP |
-| [Tiji-Tahina](https://github.com/Tiji-Tahina) | Backend NLP |
-| [njakaniavo4789](https://github.com/njakaniavo4789) | Frontend React |
-| [Devkalix](https://github.com/Devkalix) | Frontend React |
-| [TatumLn](https://github.com/TatumLn) | DevOps / Data / Scraping |
-| [Toby7431](https://github.com/Toby7431) | DevOps / Backend NLP |
+| Membre | GitHub | Rôle |
+|--------|--------|------|
+| RatsirofoFenosoa-Git | [GitHub](https://github.com/RatsirofoFenosoa-Git) | Backend NLP |
+| Tiji-Tahina | [GitHub](https://github.com/Tiji-Tahina) | Backend NLP |
+| njakaniavo4789 | [GitHub](https://github.com/njakaniavo4789) | Frontend React |
+| Devkalix | [GitHub](https://github.com/Devkalix) | Frontend React |
+| TatumLn | [GitHub](https://github.com/TatumLn) | DevOps / Data |
+| Toby7431 | [GitHub](https://github.com/Toby7431) | DevOps / Backend NLP |
 
-## Lien de la video de presentation 
-- [test_video](https://drive.google.com/file/d/13_4-HVYdgCsw_HQSM8EOP7vNilxp5ZSh/view?usp=sharing)
+---
+
+## Vidéo de présentation
+
+[Voir la vidéo](https://drive.google.com/file/d/13_4-HVYdgCsw_HQSM8EOP7vNilxp5ZSh/view?usp=sharing)

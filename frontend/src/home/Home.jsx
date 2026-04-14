@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { analyserSentiment, genererAudio, autocomplete } from "../services/api";
+import { analyserSentiment, genererAudio, autocomplete, chatbot } from "../services/api";
 
 // ─── Quill loader ─────────────────────────────────────────────────────────────
 function useQuill(containerRef) {
@@ -91,17 +91,6 @@ function useQuill(containerRef) {
   }, []);
 
   return { getText, reset, save, ready, isWriting, setIsWriting, sentiment, setSentiment, sentimentLoading, detectSentiment, textVersion };
-}
-
-// ─── Claude API ───────────────────────────────────────────────────────────────
-async function callClaude(messages, system = "") {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system, messages }),
-  });
-  const d = await res.json();
-  return d.content?.map(b => b.text || "").join("") || "";
 }
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
@@ -344,17 +333,13 @@ function ChatbotPanel({ getText, onClose }) {
   const send = async () => {
     const q = input.trim();
     if (!q || busy) return;
-    const doc = getText().trim().slice(0, 3000);
-    const next = [...msgs, { role:"user", text:q }];
-    setMsgs(next); setInput(""); setBusy(true);
+    setMsgs(prev => [...prev, { role:"user", text:q }]);
+    setInput(""); setBusy(true);
     try {
-      const reply = await callClaude(
-        next.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
-        `You are a writing assistant. The user's document:\n\n---\n${doc}\n---\nBe concise, helpful and creative.`
-      );
-      setMsgs(p => [...p, { role:"assistant", text:reply }]);
+      const res = await chatbot(q);
+      setMsgs(prev => [...prev, { role:"assistant", text: res.data.reponse }]);
     } catch {
-      setMsgs(p => [...p, { role:"assistant", text:"Nisy olana. Avereno indray azafady." }]);
+      setMsgs(prev => [...prev, { role:"assistant", text:"Nisy olana. Avereno indray azafady." }]);
     }
     setBusy(false);
   };
@@ -368,7 +353,7 @@ function ChatbotPanel({ getText, onClose }) {
           </div>
           <div>
             <div style={{ fontWeight:700, fontSize:12.5, color:"#e2e8f0", fontFamily:"'Playfair Display',serif" }}>Mpanolotsaina avo</div>
-            <div style={{ fontSize:10, color:"#94a3b8" }}>Tamin'ny Claude</div>
+            <div style={{ fontSize:10, color:"#94a3b8" }}>AI Gemini</div>
           </div>
         </div>
         <button onClick={onClose} style={{ background:"#131f35", border:`1px solid #1e2d42`, borderRadius:7, width:26, height:26, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#94a3b8" }}>
