@@ -28,7 +28,6 @@ Rules are derived from:
 """
 
 import re
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +41,13 @@ def _suggest_remove(word: str, seq: str) -> str:
 
 def _suggest_replace(word: str, seq: str, replacement: str) -> str:
     return word.replace(seq, replacement, 1)
+
+
+def _insert_vowel_after_cluster(word: str, cluster: str) -> str:
+    """Insert 'a' between invalid start cluster and rest of word."""
+    if len(word) > len(cluster):
+        return word[:len(cluster)] + "a" + word[len(cluster):]
+    return word
 
 
 # ---------------------------------------------------------------------------
@@ -63,103 +69,129 @@ def _make_rules():
     # ------------------------------------------------------------------
     # 1.  Sequences that are NEVER valid anywhere in a Malagasy word
     # ------------------------------------------------------------------
-    always_forbidden = [
-        # (regex_pattern, rule_id, friendly_name, replacement_hint)
-        (r"nb",  "FORBID_NB",  "nb",  "m"),   # nb -> m  (labial assimilation)
-        (r"mk",  "FORBID_MK",  "mk",  "nk"),  # mk -> nk
-        (r"dt",  "FORBID_DT",  "dt",  "t"),   # dt -> t
-        (r"bp",  "FORBID_BP",  "bp",  "mp"),  # bp -> mp
-        (r"sz",  "FORBID_SZ",  "sz",  "s"),   # sz -> s
-    ]
+    # Combined pattern for better performance (single regex pass)
+    _ALWAYS_FORBIDDEN_COMBINED = re.compile(r"(nb|mk|dt|bp|sz)")
 
-    for pat, rid, seq_name, repl in always_forbidden:
-        _pat = pat          # capture for closure
-        _rid = rid
-        _repl = repl
-        rules.append({
-            "id": rid,
-            "pattern": re.compile(pat),
-            "message": f"La séquence '{seq_name}' n'existe pas en Malagasy.",
-            "suggest_fn": lambda w, m, r=_repl, p=_pat: _suggest_replace(w, m.group(), r),
-        })
+    _FORBIDDEN_MAP = {
+        "nb": ("FORBID_NB", "m", "nb"),
+        "mk": ("FORBID_MK", "nk", "mk"),
+        "dt": ("FORBID_DT", "t", "dt"),
+        "bp": ("FORBID_BP", "mp", "bp"),
+        "sz": ("FORBID_SZ", "s", "sz"),
+    }
+
+    def _forbidden_suggest(w, seq):
+        repl = _FORBIDDEN_MAP[seq][1]
+        return _suggest_replace(w, seq, repl)
+
+    def _forbidden_match(text):
+        m = _ALWAYS_FORBIDDEN_COMBINED.search(text)
+        if m:
+            seq = m.group()
+            rule_id = _FORBIDDEN_MAP[seq][0]
+            msg = f"La séquence '{seq}' n'existe pas en Malagasy."
+            return rule_id, msg, seq
+        return None
+
+    rules.append({
+        "id": "FORBID_COMBINED",
+        "_match_fn": _forbidden_match,
+        "suggest_fn": _forbidden_suggest,
+    })
 
     # ------------------------------------------------------------------
     # 2.  Sequences forbidden at the START of a word
     # ------------------------------------------------------------------
-    # nk at word-start is forbidden (nk inside a word is a valid prenasalised stop)
-    start_forbidden = [
-        (r"^nk",  "FORBID_START_NK",  "nk",  "n"),
-    ]
+    # TPML: Only tr, dr, ts, dz are valid start clusters in Malagasy
+    # All others are invalid (including nk which is valid medially)
+    # Exclude sequences already handled by FORBID_COMBINED (nb, mk, dt, bp, sz)
+    _VALID_START_CLUSTERS = re.compile(r"^(tr|dr|ts|dz)")
+    _ALWAYS_FORBIDDEN = ("nb", "mk", "dt", "bp", "sz")
+    _INVALID_START_RE = re.compile(r"^([bcdfghjklmnpqrstvwxz]{2,})")
 
-    for pat, rid, seq_name, repl in start_forbidden:
-        _repl = repl
-        rules.append({
-            "id": rid,
-            "pattern": re.compile(pat),
-            "message": f"La séquence '{seq_name}' ne peut pas commencer un mot Malagasy.",
-            "suggest_fn": lambda w, m, r=_repl: _suggest_replace(w, m.group(), r),
-        })
+    def _start_cluster_match(text):
+        m = _INVALID_START_RE.search(text)
+        if m:
+            cluster = m.group()
+            if cluster in _ALWAYS_FORBIDDEN:
+                return None
+            if _VALID_START_CLUSTERS.match(cluster):
+                return None
+            return "FORBID_START_CLUSTER", f"La séquence '{cluster}' ne peut pas commencer un mot Malagasy.", cluster
+        return None
+
+    rules.append({
+        "id": "FORBID_START_CLUSTER",
+        "_match_fn": _start_cluster_match,
+        "suggest_fn": lambda w, seq: _insert_vowel_after_cluster(w, seq),
+    })
 
     # ------------------------------------------------------------------
     # 3.  Words must end in a vowel (a e i o y) or -na / -ny / -ka / -tra etc.
-    #     Ending in a plain consonant (other than -n) is non-Malagasy.
     # ------------------------------------------------------------------
-    # Allowed final consonants after the main vowel check:
-    #   -na, -ny are common suffixes → final 'a' or 'y' keeps it vowel-final already.
-    #   In practice any word ending in a consonant that is NOT 'y' is suspicious.
-    # We flag words ending in a consonant that is not 'y'.
+    _END_CONSONANT_RE = re.compile(r"[bcdfghjklmnpqrstvwxz]$")
+
+    def _end_consonant_match(text):
+        m = _END_CONSONANT_RE.search(text)
+        if m:
+            return "END_CONSONANT", "Les mots Malagasy se terminent par une voyelle (a, e, i, o, u) ou -y.", m.group()
+        return None
+
     rules.append({
         "id": "END_CONSONANT",
-        "pattern": re.compile(r"[bcdfghjklmnpqrstvwxz]$"),
-        "message": "Les mots Malagasy se terminent par une voyelle (a, e, i, o, u) ou -y.",
-        "suggest_fn": lambda w, m: w + "a",   # append 'a' as a generic hint
+        "_match_fn": _end_consonant_match,
+        "suggest_fn": lambda w, seq: w + "a",
     })
 
     # ------------------------------------------------------------------
     # 4.  Double consonants (gemination) – does not exist in Malagasy
     # ------------------------------------------------------------------
+    _DOUBLE_CONSONANT_RE = re.compile(r"([bcdfghjklmnpqrstvwxz])\1")
+
+    def _double_consonant_match(text):
+        m = _DOUBLE_CONSONANT_RE.search(text)
+        if m:
+            seq = m.group()
+            return "DOUBLE_CONSONANT", f"La consonne '{seq}' est doublée — la gémination n'existe pas en Malagasy.", seq
+        return None
+
     rules.append({
         "id": "DOUBLE_CONSONANT",
-        "pattern": re.compile(r"([bcdfghjklmnpqrstvwxz])\1"),
-        "message": "La consonne '{seq}' est doublée — la gémination n'existe pas en Malagasy.",
-        "suggest_fn": lambda w, m: _suggest_replace(w, m.group(), m.group(1)),
+        "_match_fn": _double_consonant_match,
+        "suggest_fn": lambda w, seq: _suggest_replace(w, seq, seq[0]),
     })
 
     # ------------------------------------------------------------------
     # 5.  Three or more consonants in a row (very rare in Malagasy)
     # ------------------------------------------------------------------
-    # Known valid clusters in Malagasy (prenasalised stops + common digraphs):
-    #   nts, mts, ndr, mdr, ntr, mtr, str, tsr, ndz, mbr, ndr
-    # We only flag sequences NOT starting with one of those.
+    # Valid clusters: prenasalized stops (mp, mb, nd, ng, nj) + known digraphs
     _VALID_CLUSTERS = re.compile(
         r"^(nts|mts|ndr|mdr|ntr|mtr|str|tsr|ndz|mbr|mpr|nts)"
     )
+    _PRENASALIZED = re.compile(r"(mp|mb|nd|ng|nj)")
+    _TRIPLE_CONS_RE = re.compile(r"[bcdfghjklmnpqrstvwxz]{3,}")
 
-    def _triple_suggest(w, m):
-        return w  # no automatic fix
+    def _triple_match(text):
+        m = _TRIPLE_CONS_RE.search(text)
+        if m:
+            seq = m.group()
+            if _VALID_CLUSTERS.match(seq):
+                return None
+            if _PRENASALIZED.search(seq):
+                return None
+            return "TRIPLE_CONSONANT", f"Séquence de 3 consonnes ou plus '{seq}' — inhabituelle en Malagasy.", seq
+        return None
 
-    def _triple_pattern_match(text):
-        """Yield all 3+ consonant sequences that are NOT known-valid clusters."""
-        for m in re.finditer(r"[bcdfghjklmnpqrstvwxz]{3,}", text):
-            if not _VALID_CLUSTERS.match(m.group()):
-                yield m
-
-    # We store a custom finder instead of a plain pattern.
     rules.append({
         "id": "TRIPLE_CONSONANT",
-        "pattern": None,                 # signals custom matching
-        "_finder": _triple_pattern_match,
-        "message": "Séquence de 3 consonnes ou plus '{seq}' — inhabituelle en Malagasy.",
-        "suggest_fn": lambda w, m: w,
+        "_match_fn": _triple_match,
+        "suggest_fn": lambda w, seq: w,
     })
 
     return rules
 
 
 RULES = _make_rules()
-
-# Vowels set (used for quick pre-filter)
-_VOWELS = set("aeiouAEIOU")
 
 # Tokeniser: split on whitespace and strip punctuation
 _TOKEN_RE = re.compile(r"[^\s]+")
@@ -189,20 +221,19 @@ def check_word(word: str) -> list[dict]:
     w_lower = word.lower()
 
     for rule in RULES:
-        finder = rule.get("_finder")
-        matches = list(finder(w_lower)) if finder else list(rule["pattern"].finditer(w_lower))
-        for match in matches:
-            seq = match.group()
-            suggestion = rule["suggest_fn"](word, match)
-            msg = rule["message"].replace("{seq}", seq)
-            errors.append({
-                "word":       word,
-                "sequence":   seq,
-                "rule_id":    rule["id"],
-                "message":    msg,
-                "suggestion": suggestion,
-            })
-            break  # report each rule at most once per word
+        match_fn = rule.get("_match_fn")
+        if match_fn:
+            result = match_fn(w_lower)
+            if result:
+                rule_id, msg, seq = result
+                suggestion = rule["suggest_fn"](word, seq)
+                errors.append({
+                    "word":       word,
+                    "sequence":   seq,
+                    "rule_id":    rule_id,
+                    "message":    msg,
+                    "suggestion": suggestion,
+                })
 
     return errors
 
@@ -283,20 +314,26 @@ if __name__ == "__main__":
         # (word, expect_error)
         ("manosika",  False),   # valid
         ("tosika",    False),   # valid
-        ("trano",     False),   # valid
+        ("trano",     False),   # valid - tr is valid cluster
         ("tantsaha",  False),   # valid
-        ("tsara",     False),   # valid
+        ("tsara",     False),   # valid - ts is valid cluster
         ("mandeha",   False),   # valid
         ("hazo",      False),   # valid
+        ("droa",      False),   # valid - dr is valid cluster
+        ("dzaro",     False),   # valid - dz is valid cluster
         # --- should trigger errors ---
         ("nbola",     True),    # FORBID_NB
         ("mkasy",     True),    # FORBID_MK
-        ("nkatra",    True),    # FORBID_START_NK
+        ("nkatra",    True),    # FORBID_START_CLUSTER (nk at start)
         ("szaka",     True),    # FORBID_SZ
         ("dtana",     True),    # FORBID_DT
         ("bpasy",     True),    # FORBID_BP
         ("zandrr",    True),    # DOUBLE_CONSONANT
         ("tanjom",    True),    # END_CONSONANT (ends in m)
+        ("blato",     True),    # FORBID_START_CLUSTER (bl)
+        ("pren",      True),    # FORBID_START_CLUSTER (pr)
+        ("grilo",     True),    # FORBID_START_CLUSTER (gr)
+        ("klio",     True),    # FORBID_START_CLUSTER (cl - french)
     ]
 
     print(f"{'Word':<15} {'Expected Error':<15} {'Got Error':<10} {'Details'}")

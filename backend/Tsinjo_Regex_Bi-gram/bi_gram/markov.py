@@ -28,9 +28,10 @@ Public API
   build_and_save(tokens, path)            → convenience one-liner
 """
 
+import heapq
 import json
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -43,7 +44,9 @@ class BigramModel:
     def __init__(self):
         # counts[w1][w2] = number of times w2 follows w1
         self.counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self._totals: dict[str, int] = {}
         self._token_count: int = 0
+        self._global_top_cache: Optional[list[tuple[str, float]]] = None
 
     # ------------------------------------------------------------------
     # Training
@@ -62,7 +65,9 @@ class BigramModel:
             self.counts[w1][w2] += 1
 
         self._token_count += len(tokens)
-        total_pairs = sum(sum(v.values()) for v in self.counts.values())
+        self._totals = {w1: sum(v.values()) for w1, v in self.counts.items()}
+        self._global_top_cache = None
+        total_pairs = sum(self._totals.values())
         logger.info("Model trained: %d unique first-words, %d bigram pairs",
                     len(self.counts), total_pairs)
         return self
@@ -84,22 +89,19 @@ class BigramModel:
         followers = self.counts.get(word)
 
         if not followers:
-            # Fallback: return the globally most frequent words
             return self._global_top(top_n)
 
-        total = sum(followers.values())
-        ranked = sorted(followers.items(), key=lambda x: x[1], reverse=True)[:top_n]
+        total = self._totals.get(word, 1)
+        ranked = heapq.nlargest(top_n, followers.items(), key=lambda x: x[1])
         return [(w, count / total) for w, count in ranked]
 
     def _global_top(self, top_n: int) -> list[tuple[str, float]]:
         """Return the most frequent words overall (used as fallback)."""
-        freq: dict[str, int] = defaultdict(int)
-        for followers in self.counts.values():
-            for w, c in followers.items():
-                freq[w] += c
-        total = sum(freq.values()) or 1
-        ranked = sorted(freq.items(), key=lambda x: x[1], reverse=True)[:top_n]
-        return [(w, c / total) for w, c in ranked]
+        if self._global_top_cache is None:
+            freq = Counter(w for followers in self.counts.values() for w in followers)
+            total = sum(freq.values()) or 1
+            self._global_top_cache = [(w, c / total) for w, c in freq.most_common()]
+        return self._global_top_cache[:top_n]
 
     def predict_api(self, word: str, top_n: int = 5) -> dict:
         """
@@ -137,7 +139,6 @@ class BigramModel:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert defaultdicts to plain dicts for JSON serialisation
         data = {
             "meta": {
                 "type":        "bigram",
@@ -145,6 +146,7 @@ class BigramModel:
                 "vocab_size":  len(self.counts),
             },
             "counts": {w1: dict(w2s) for w1, w2s in self.counts.items()},
+            "totals": self._totals,
         }
 
         with open(path, "w", encoding="utf-8") as f:
@@ -173,6 +175,10 @@ class BigramModel:
             for w2, c in w2s.items():
                 model.counts[w1][w2] = c
 
+        model._totals = data.get("totals", {})
+        if not model._totals:
+            model._totals = {w1: sum(v.values()) for w1, v in model.counts.items()}
+
         meta = data.get("meta", {})
         model._token_count = meta.get("token_count", 0)
 
@@ -187,10 +193,9 @@ class BigramModel:
     # ------------------------------------------------------------------
 
     def stats(self) -> dict:
-        total_pairs = sum(sum(v.values()) for v in self.counts.values())
         return {
             "vocab_size":   len(self.counts),
-            "total_bigrams": total_pairs,
+            "total_bigrams": sum(self._totals.values()),
             "token_count":  self._token_count,
         }
 
