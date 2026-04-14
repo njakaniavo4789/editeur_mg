@@ -23,9 +23,15 @@ Un éditeur de texte intelligent pour la langue malagasy doté de fonctionnalit�
 
 ## Tester maintenant
 
-1. Ouvrez : **https://whimsical-crisp-bb4e10.netlify.app/**
-2. Tapez du texte en malagasy
-3. Les fonctionnalités IA s'activent automatiquement !
+1. **Backend Colab doit tourner** avec `VITE_API_URL` configurée
+2. Ouvrez : **https://whimsical-crisp-bb4e10.netlify.app/**
+3. Tapez du texte en malagasy (au moins 2 mots pour NER)
+4. La barre de droite affiche automatiquement :
+   - **Entités (NER)** détectées (villes, personnes)
+   - **Fanitsiana** (suggestions de correction)
+   - **Lematisera** (préfixe/infixe/suffixe/racine)
+   - **Fandikana** (traduction MG→FR)
+   - **Autocomplete** (mots suivants possibles)
 
 ---
 

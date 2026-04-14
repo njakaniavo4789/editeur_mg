@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { analyserSentiment, genererAudio, autocomplete, chatbot, correcterMotDetail, analyserMot, traduire } from "../services/api";
+import { analyserSentiment, genererAudio, autocomplete, chatbot, analyserTexte } from "../services/api";
 
 // ─── Quill loader ─────────────────────────────────────────────────────────────
 function useQuill(containerRef) {
@@ -484,14 +484,37 @@ function SentimentModal({ getText, onClose }) {
                 <div style={{ height:5, borderRadius:99, background:p.a, width:`${(result.score||0)*100}%`, transition:"width 0.8s ease" }} />
               </div>
             </div>
-            <p style={{ fontSize:13, lineHeight:1.75, color: "#94a3b8", fontFamily:"'Lora',serif" }}>{result.summary}</p>
-            {result.highlights?.length > 0 && (
-              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                {result.highlights.map((h,i)=>(
-                  <span key={i} style={{ padding:"3px 10px", borderRadius:99, fontSize:11, fontWeight:600, background:p.bg, color:p.a, border:`1px solid ${p.a}35`, fontFamily:"'DM Sans',sans-serif" }}>"{h}"</span>
-                ))}
+            
+            <div style={{ padding:14, background:"#131f35", borderRadius:12}}>
+              <div style={{ fontSize:11, color:"#64748b", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.1em" }}>Fanazavana</div>
+              <p style={{ fontSize:13, lineHeight:1.75, color: "#e2e8f0", fontFamily:"'Lora',serif" }}>
+                {result.label === "Positive" && "Ny lahatsoratrao manana toetra tsara sy manankina. Manantraika ny feon'ny mpamaky."}
+                {result.label === "Negative" && "Ny lahatsoratrao manana toetra maharary na mentsy. Misy fahoriana na fitarainana."}
+                {result.label === "Neutral" && "Ny lahatsoratrao tsy manana toetra Raveliantsika. Mahazoto na tsy mifanohitra."}
+                {result.label === "Mixed" && "Ny lahatsoratrao misy ifandraisana amin'ny toetra roa samy hafa. Mifangaro."}
+              </p>
+            </div>
+            
+            {result.mots_positifs && result.mots_positifs.length > 0 && (
+              <div style={{ padding:14, background:"#131f35", borderRadius:12}}>
+                <div style={{ fontSize:11, color:"#64748b", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.1em" }}>Teny mpifandray</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                  {result.mots_positifs.map((h,i)=>(
+                    <span key={i} style={{ padding:"4px 10px", borderRadius:20, fontSize:11, fontWeight:500, background:p.bg, color:p.a, border:`1px solid ${p.a}30`, fontFamily:"'DM Sans',sans-serif" }}>{h}</span>
+                  ))}
+                </div>
               </div>
             )}
+            
+            <div style={{ padding:14, background:"#131f35", borderRadius:12}}>
+              <div style={{ fontSize:11, color:"#64748b", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.1em" }}>Statistika</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+                <div><span style={{color:"#64748b", fontSize:10}}>Total teny:</span> <span style={{color:"#e2e8f0", fontSize:12}}>{getText().split(/\s+/).length}</span></div>
+                <div><span style={{color:"#64748b", fontSize:10}}>Confidence:</span> <span style={{color:"#10b981", fontSize:12}}>{Math.round((result.score||0.5)*100)}%</span></div>
+                <div><span style={{color:"#64748b", fontSize:10}}>Label:</span> <span style={{color:p.a, fontSize:12, fontWeight:600}}>{result.label}</span></div>
+                <div><span style={{color:"#64748b", fontSize:10}}>Status:</span> <span style={{color:"#10b981", fontSize:12}}>✓ Vonona</span></div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -577,96 +600,124 @@ function ChatbotPanel({ getText, onClose }) {
   );
 }
 
-// ─── Suggestions Panel (Backend Autocomplete) ─────────────────────────────────────
+// ─── Suggestions Panel — Analyse automatique de chaque mot ─────────────────────────────────────
 function SuggestionsPanel({ getText, isWriting }) {
-  const [suggestions, setSuggestions] = useState([]);
+  const [analyse, setAnalyse] = useState(null);
   const [loading, setLoading] = useState(false);
+  const textVersionRef = useRef(0);
 
   useEffect(() => {
-    const text = getText().toLowerCase();
-    const words = text.split(/\s+/);
-    const lastWord = words[words.length - 1];
+    let timeoutId;
     
-    if (lastWord && lastWord.length >= 2) {
+    const doAnalyse = async () => {
+      const text = getText().trim();
+      
+      if (!text || text.length < 2) {
+        setAnalyse(null);
+        setLoading(false);
+        return;
+      }
+      
       setLoading(true);
-      autocomplete(lastWord, 6)
-        .then(res => {
-          const mots = res.data.suggestions || [];
-          const defs = {
-            "fahitana": "Fahitana dia zava azo jerena amin'ny maso, na azo fantarina amin'ny saina.",
-            "fahafahana": "Toetra na hery azo ampiasaina hanatanteraka zava iray.",
-            "fahatsiarovana": "Fahatsiarovana na fahafantarana indray zava efa nisy taloha.",
-            "fahasembana": "Toetra manondro ny fahafaham-po na ny fahafinaretana.",
-            "fahamendrehana": "Fahamendrehana dia toetra manondro ny fahafahana manao zava tsara sy marina.",
-            "fahazavana": "Fahazavana dia toetra manondro ny fahafinaretana na ny fahasahiana.",
-          };
-          setSuggestions(mots.map(mot => ({
-            word: mot,
-            definition: defs[mot] || "Tsy hita famaritana."
-          })));
-        })
-        .catch(() => setSuggestions([]))
-        .finally(() => setLoading(false));
+      
+      try {
+        const res = await analyserTexte(text);
+        setAnalyse(res.data);
+      } catch (err) {
+        console.error("Analyse error:", err);
+        setAnalyse(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    if (isWriting && getText().trim().length >= 2) {
+      timeoutId = setTimeout(doAnalyse, 800);
     } else {
-      setSuggestions([]);
+      setAnalyse(null);
     }
+    
+    return () => clearTimeout(timeoutId);
   }, [getText, isWriting]);
 
   if (!isWriting) return null;
 
   return (
     <div style={{
-      width: 280,
+      width: 300,
       background: "#080e1c",
       borderLeft: `1px solid #16243a`,
-      padding: "16px 12px",
+      padding: "12px",
       display: "flex",
       flexDirection: "column",
       height: "100vh",
       overflowY: "auto",
     }}>
-      <div style={{ padding: "0 8px 16px", borderBottom: `1px solid #16243a`, marginBottom: 12 }}>
+      <div style={{ padding: "0 4px 12px", borderBottom: `1px solid #16243a`, marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Ico n="lightbulb" s={18} color="#f59e0b" />
-          <span style={{ fontWeight: 600, fontSize: 14, color: "#dde4f0", fontFamily: "'Playfair Display',serif" }}>Fanoratra Fanampiana</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "#dde4f0" }}>Fanoratra Fanampiana</span>
         </div>
-        <p style={{ fontSize: 10, color: "#64748b", marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>Teny sy hevitra hanampy anao</p>
+        <p style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>Teny sy hevitra hanampy anao</p>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {suggestions.map((suggestion, index) => (
-          <div
-            key={index}
-            style={{
+      {loading && <div style={{ padding: 20, textAlign: "center" }}>
+        <div style={{ width: 24, height: 24, borderRadius: "50%", border: "2px solid #3b82f6", borderTopColor: "transparent", animation: "spin 0.75s linear infinite", margin: "0 auto" }} />
+      </div>}
+
+      {analyse && analyse.mots && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {analyse.mots.map((m, i) => (
+            <div key={i} style={{
               background: "#0d1626",
               borderRadius: 10,
-              padding: 12,
-              border: `1px solid #1e2d42`,
-              transition: "all 0.2s ease",
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-2px)";
-              e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.2)";
-              e.currentTarget.style.borderColor = "#3b82f6";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "none";
-              e.currentTarget.style.borderColor = "#1e2d42";
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Ico n="star" s={14} color="#f59e0b" />
-              <span style={{ fontWeight: 500, color: "#dde4f0", fontSize: 13, fontFamily: "'DM Sans',sans-serif" }}>{suggestion.word}</span>
+              padding: 10,
+              border: `1px solid ${m.entite ? "#3b82f6" : m.correction ? "#f59e0b" : m.inDico ? "#10b981" : "#1e2d42"}`,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 13 }}>{m.mot}</span>
+                {m.entite && <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 9, background: "#1e3a5f", color: "#60a5fa" }}>{m.entite}</span>}
+                {!m.inDico && !m.entite && <span style={{ fontSize: 10, color: "#f43f5e" }}>Tsy @ dico</span>}
+                {m.inDico && !m.entite && <span style={{ fontSize: 10, color: "#10b981" }}>✓ Marina</span>}
+              </div>
+
+              {m.correction && m.correction.suggestions && (
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 9, color: "#64748b", marginBottom: 4, textTransform: "uppercase" }}>Fanitsiana</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {m.correction.suggestions.map((s, j) => (
+                      <span key={j} style={{ padding: "3px 8px", background: "#131f35", borderRadius: 6, fontSize: 11, color: "#10b981" }}>{s.mot} ({s.score}%)</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {m.lemma && (
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 9, color: "#64748b", marginBottom: 4, textTransform: "uppercase" }}>Lematisera</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                    <div style={{ fontSize: 10 }}><span style={{color:"#64748b"}}>Pref:</span> <span style={{color:"#8b5cf6"}}>{m.lemma.prefixe || "-"}</span></div>
+                    <div style={{ fontSize: 10 }}><span style={{color:"#64748b"}}>Inf:</span> <span style={{color:"#8b5cf6"}}>{m.lemma.infixe || "-"}</span></div>
+                    <div style={{ fontSize: 10 }}><span style={{color:"#64748b"}}>Suf:</span> <span style={{color:"#8b5cf6"}}>{m.lemma.suffixe || "-"}</span></div>
+                    <div style={{ fontSize: 10 }}><span style={{color:"#64748b"}}>Fototeny:</span> <span style={{color:"#10b981", fontWeight:600}}>{m.lemma.lemme || "-"}</span></div>
+                  </div>
+                </div>
+              )}
+
+              {m.traduction && (
+                <div>
+                  <div style={{ fontSize: 9, color: "#64748b", marginBottom: 4, textTransform: "uppercase" }}>Fandikana MG→FR</div>
+                  <div style={{ padding: 6, background: "#131f35", borderRadius: 6, fontSize: 12, color: "#f59e0b" }}>{m.traduction}</div>
+                </div>
+              )}
             </div>
-            <p style={{ fontSize: 11, color: "#94a3b8", marginLeft: 22, fontFamily: "'Lora',serif", lineHeight: 1.5 }}>{suggestion.definition}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && analyse && (!analyse.mots || analyse.mots.length === 0) && (
+        <div style={{ padding: 20, textAlign: "center", color: "#64748b", fontSize: 12 }}>Soraty azafady...</div>
+      )}
     </div>
   );
 }
@@ -696,9 +747,6 @@ function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTi
   };
 
   const NAV = [
-    { id: "correction", icon: "check", label: "Fanitsiana", color: "#10b981" },
-    { id: "lemma", icon: "book", label: "Lematisera", color: "#8b5cf6" },
-    { id: "translate", icon: "translate", label: "Fandikana", color: "#f59e0b" },
     { id: "sentiment", icon: "smile", label: "Toetran-dahatsoratra", color: "#ec4899" },
     { id: "chatbot", icon: "bot", label: "Mpanolo-tsaina", color: "#06b6d4" },
     { id: "synthese", icon: "mic", label: "Famakian-teny", color: "#ef4444" },
@@ -713,8 +761,8 @@ function Sidebar({ active, setActive, onSave, onReset, saved, docTitle, setDocTi
             <Ico n="pen" s={17} color="#fff" />
           </div>
           <div>
-            <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: 17, color: "#f0f4ff", letterSpacing: "-0.3px" }}>Scriptura</div>
-            <div style={{ fontSize: 10, color: mute, fontFamily: "'DM Sans',sans-serif" }}>Éditeur v2.1</div>
+            <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: 17, color: "#f0f4ff", letterSpacing: "-0.3px" }}>Litera</div>
+            <div style={{ fontSize: 10, color: mute, fontFamily: "'DM Sans',sans-serif" }}>v1.0</div>
           </div>
         </div>
       </div>
@@ -963,27 +1011,6 @@ export default function App() {
       {/* SENTIMENT MODAL */}
       {active === "sentiment" && (
         <SentimentModal getText={getText} onClose={() => setActive(null)} />
-      )}
-
-      {/* CORRECTION PANEL */}
-      {active === "correction" && (
-        <div style={{ width: 300, flexShrink: 0 }}>
-          <CorrectionPanel getText={getText} onClose={() => setActive(null)} />
-        </div>
-      )}
-
-      {/* LEMMA PANEL */}
-      {active === "lemma" && (
-        <div style={{ width: 300, flexShrink: 0 }}>
-          <LemmaPanel getText={getText} onClose={() => setActive(null)} />
-        </div>
-      )}
-
-      {/* TRANSLATE PANEL */}
-      {active === "translate" && (
-        <div style={{ width: 300, flexShrink: 0 }}>
-          <TranslatePanel getText={getText} onClose={() => setActive(null)} />
-        </div>
       )}
     </div>
   );
