@@ -21,6 +21,42 @@ Un éditeur de texte intelligent pour la langue malagasy doté de fonctionnalit�
 
 ---
 
+## Lancer le projet en local
+
+### Prérequis
+- Python 3.11+
+- Node.js + npm
+
+### 1. Backend (terminal 1)
+```bash
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### 2. Frontend (terminal 2)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 3. Ouvrir dans le navigateur
+- Frontend: **http://localhost:5173**
+- Backend API: **http://localhost:8000**
+
+---
+
+## Lancer avec Docker
+
+```bash
+docker-compose up --build
+```
+- Frontend: **http://localhost:3000**
+- Backend: **http://localhost:8000**
+
+---
+
 ## Tester maintenant
 
 1. **Backend Colab doit tourner** avec `VITE_API_URL` configurée
@@ -54,6 +90,7 @@ Un éditeur de texte intelligent pour la langue malagasy doté de fonctionnalit�
 
 | Route | Méthode | Description |
 |------|---------|-------------|
+| `/api/analyse/texte` | POST | Analyse complète (NER + correction + lemme +-traduction) |
 | `/api/correct/mot` | POST | Correction orthographique |
 | `/api/correct/texte` | POST | Correction d'un texte complet |
 | `/api/lemma` | POST | Lemmatisation d'un mot |
